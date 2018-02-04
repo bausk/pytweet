@@ -102,3 +102,7 @@ ENV/
 
 .idea/
 *.lock
+
+*.json
+
+credentials.cmd
