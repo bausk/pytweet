@@ -1,1 +1,1 @@
-web: bokeh serve --port $PORT testserve
+web: bokeh serve --port $PORT testserve.py
