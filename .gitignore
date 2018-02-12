@@ -106,3 +106,5 @@ ENV/
 *.json
 
 credentials.cmd
+*.html
+*.pkl
