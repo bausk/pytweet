@@ -84,7 +84,7 @@ if __name__ == "__main__":
         order_book = target_rates.fetch_order_book()
         record = orderbook_to_record(order_book, coeff)
         if record['timestamp'] is not None:
-            tmp_book = pd.Series(orderbook_to_record(order_book, coeff))
+            tmp_book = pd.Series(record)
             order_df.loc[pd.to_datetime(tmp_book.timestamp, unit="s")] = tmp_book
 
         TOOLS = "pan,wheel_zoom,xwheel_zoom,box_zoom,reset,save"
@@ -99,4 +99,6 @@ if __name__ == "__main__":
 
         output_file("arbitrage2.html", title="Arbitrage between cryptowat.ch and kuna.io")
         save(p)
-        sleep(0.1)
+        pd.to_pickle(source_df, 'source_df.pkl')
+        pd.to_pickle(target_df, 'target_df.pkl')
+        sleep(1)
