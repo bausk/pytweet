@@ -43,18 +43,23 @@ if __name__ == "__main__":
     source_df = source_df.truncate(start_time)
     target_df = target_df.truncate(start_time)
 
-    temp_target_df = pd.read_pickle('target_df.pkl')
-    temp_target_df.sort_index(inplace=True)
+    try:
+        temp_target_df = pd.read_pickle('target_df.pkl')
+        temp_target_df.sort_index(inplace=True)
 
-    temp_source_df = pd.read_pickle('source_df.pkl')
-    temp_source_df.sort_index(inplace=True)
+        temp_source_df = pd.read_pickle('source_df.pkl')
+        temp_source_df.sort_index(inplace=True)
 
-    coeff = fit_rates(temp_source_df, temp_target_df) * 0.03415559028863187
-    target_df['price_coeff'] = target_df['price'].multiply(coeff)
+        conversion_rate = fit_rates(temp_source_df, temp_target_df) * 0.03415559028863187
+
+    except BaseException as e:
+        conversion_rate = 1
+
+    target_df['price_coeff'] = target_df['price'].multiply(conversion_rate)
 
     order_book = target_rates.fetch_order_book()
 
-    order_df: pd.DataFrame = pd.DataFrame([orderbook_to_record(order_book, coeff)])
+    order_df: pd.DataFrame = pd.DataFrame([orderbook_to_record(order_book, conversion_rate)])
     order_df['Time'] = pd.to_datetime(order_df.timestamp, unit="s")
     order_df.set_index('Time', inplace=True)
     order_df.sort_index(inplace=True)
@@ -75,14 +80,14 @@ if __name__ == "__main__":
         target_tmp = pd.DataFrame(target_data, columns=['timestamp', 'id', 'created_at', 'price', 'volume'])
         target_tmp['Time'] = pd.to_datetime(target_tmp.timestamp, unit="s")
         target_tmp.set_index('Time', inplace=True)
-        target_tmp['price'] = target_tmp['price'] * coeff
+        target_tmp['price'] = target_tmp['price'] * conversion_rate
         target_df = pd.concat([target_df, target_tmp]).drop_duplicates(subset='id')
         target_df.sort_index(inplace=True)
         target_df = target_df.truncate(start_time)
 
         # Add new order book call
         order_book = target_rates.fetch_order_book()
-        record = orderbook_to_record(order_book, coeff)
+        record = orderbook_to_record(order_book, conversion_rate)
         if record['timestamp'] is not None:
             tmp_book = pd.Series(record)
             order_df.loc[pd.to_datetime(tmp_book.timestamp, unit="s")] = tmp_book
