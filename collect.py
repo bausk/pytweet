@@ -11,11 +11,13 @@ from sources.historical import CryptowatchSource, KunaIoSource
 from parsers.rates import fit_rates, orderbook_to_record
 
 def init_frame(file_name, columns=None):
+    print("[info] Loading data for {}".format(file_name))
     try:
         res = pd.read_pickle(file_name)
         res.sort_index(inplace=True)
         print("[info] Picked up data from {}".format(file_name))
     except BaseException as e:
+        print(e)
         res = pd.DataFrame(columns=columns)
         res['Time'] = pd.to_datetime(res.timestamp, unit="s")
         res.set_index('Time', inplace=True)
