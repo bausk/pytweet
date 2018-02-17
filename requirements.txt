@@ -4,3 +4,4 @@ bokeh==0.12.13
 nltk==3.2.5
 numpy==1.14.0
 pandas==0.22.0
+psycopg2
