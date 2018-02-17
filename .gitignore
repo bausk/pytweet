@@ -104,6 +104,7 @@ ENV/
 *.lock
 
 *.json
+!app.json
 
 credentials.cmd
 *.html

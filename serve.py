@@ -6,6 +6,7 @@ from bokeh.layouts import row, widgetbox
 from bokeh.models import ColumnDataSource
 from bokeh.models.widgets import Slider, TextInput
 from bokeh.plotting import figure
+from bokeh.palettes import Spectral4
 
 
 # Set up data
@@ -21,13 +22,35 @@ def refresh_data():
     source_df = pd.read_pickle('source_df.pkl')
     source_df.sort_index(inplace=True)
 
+    orders_df = pd.read_pickle('order_df.pkl')
+    orders_df.sort_index(inplace=True)
+    return source_df, target_df, orders_df
+
+def init_plot(source_df, target_df, orders_df, y_range=(8000, 9000)):
+    TOOLS = "pan,wheel_zoom,xwheel_zoom,box_zoom,reset,save"
+    p = figure(x_axis_type="datetime", tools=TOOLS, plot_width=1000, title="Arbitrage Controller", y_range=y_range)
+
+    p.grid.grid_line_alpha = 0.3
+
+    p.line(source_df.index, source_df['price'], line_width=3, color=Spectral4[0], alpha=0.8, legend="Gax")
+    p.line(target_df.index, target_df['price'], line_width=3, color=Spectral4[1], alpha=0.8, legend="Kuna")
+    p.line(orders_df.index, orders_df['bid'], line_width=1, color=Spectral4[2], alpha=0.5, legend="Bid")
+    p.line(orders_df.index, orders_df['ask'], line_width=1, color=Spectral4[3], alpha=0.5, legend="Ask")
+
+    output_file("arbitrage2.html", title="Arbitrage between cryptowat.ch and kuna.io")
+    save(p)
+    pd.to_pickle(source_df, 'source_df.pkl')
+    pd.to_pickle(target_df, 'target_df.pkl')
+    sleep(1)
+
 
 # Set up plot
-plot = figure(plot_height=400, plot_width=400, title="my sine wave",
+plot = figure(plot_height=1000, plot_width=400, title="my sine wave",
               tools="crosshair,pan,reset,save,wheel_zoom",
               x_range=[0, 4*np.pi], y_range=[-2.5, 2.5])
 
 plot.line('x', 'y', source=source, line_width=3, line_alpha=0.6)
+
 
 # Set up widgets
 text = TextInput(title="title", value='my sine wave')
