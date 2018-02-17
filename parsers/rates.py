@@ -18,24 +18,28 @@ def orderbook_to_record(orderbook, coeff=1.0):
     res = dict(timestamp=None, bid=0.0, ask=0.0, bid_volume=0.0, bid_weight=0.0, ask_volume=0.0, ask_weight=0.0)
     if len(orderbook['asks']) == 0 or len(orderbook['bids']) == 0:
         return res
-    res['ask'] = min([float(x['price']) for x in orderbook['asks']]) * coeff
-    res['bid'] = max([float(x['price']) for x in orderbook['bids']]) * coeff
+    try:
+        res['ask'] = min([float(x['price']) for x in orderbook['asks']]) * coeff
+        res['bid'] = max([float(x['price']) for x in orderbook['bids']]) * coeff
 
-    volume = 0
-    weight = 0
-    for el in orderbook['asks']:
-        volume += float(el['remaining_volume'])
-        weight += float(el['remaining_volume']) * (res['ask'] - float(el['price']) * coeff)
-    res['ask_volume'] = volume
-    res['ask_weight'] = weight
+        volume = 0
+        weight = 0
+        for el in orderbook['asks']:
+            volume += float(el['remaining_volume'])
+            weight += float(el['remaining_volume']) * (res['ask'] - float(el['price']) * coeff)
+        res['ask_volume'] = volume
+        res['ask_weight'] = weight
 
-    volume = 0
-    weight = 0
-    for el in orderbook['bids']:
-        volume += float(el['remaining_volume'])
-        weight += float(el['remaining_volume']) * (float(el['price']) - res['bid'] * coeff)
-    res['bid_volume'] = volume
-    res['bid_weight'] = weight
+        volume = 0
+        weight = 0
+        for el in orderbook['bids']:
+            volume += float(el['remaining_volume'])
+            weight += float(el['remaining_volume']) * (float(el['price']) - res['bid'] * coeff)
+        res['bid_volume'] = volume
+        res['bid_weight'] = weight
 
-    res['timestamp'] = int(datetime.now().timestamp())
-    return res
+        res['timestamp'] = int(datetime.now().timestamp())
+        return res
+    except BaseException as e:
+        print(e)
+        return res

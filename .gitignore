@@ -108,3 +108,4 @@ ENV/
 credentials.cmd
 *.html
 *.pkl
+stdout.txt
