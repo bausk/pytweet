@@ -10,6 +10,22 @@ from constants import currencies, periods, remote
 from sources.historical import CryptowatchSource, KunaIoSource
 from parsers.rates import fit_rates, orderbook_to_record
 
+import os
+from urllib import parse
+import psycopg2
+
+parse.uses_netloc.append("postgres")
+url = parse.urlparse(os.environ["DATABASE_URL"])
+
+conn = psycopg2.connect(
+    database=url.path[1:],
+    user=url.username,
+    password=url.password,
+    host=url.hostname,
+    port=url.port
+)
+
+
 def init_frame(file_name, columns=None):
     print("[info] Loading data for {}".format(file_name))
     try:
