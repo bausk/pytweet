@@ -7,21 +7,6 @@ from bokeh.models.widgets import Slider, TextInput
 from bokeh.plotting import figure
 
 
-import os
-from urllib import parse
-import psycopg2
-
-parse.uses_netloc.append("postgres")
-url = parse.urlparse(os.environ["DATABASE_URL"])
-
-conn = psycopg2.connect(
-    database=url.path[1:],
-    user=url.username,
-    password=url.password,
-    host=url.hostname,
-    port=url.port
-)
-
 # Set up data
 N = 200
 x = np.linspace(0, 4*np.pi, N)
@@ -36,7 +21,7 @@ plot = figure(plot_height=400, plot_width=400, title="my sine wave",
 plot.line('x', 'y', source=source, line_width=3, line_alpha=0.6)
 
 # Set up widgets
-text = TextInput(title=url.username, value='my sine wave')
+text = TextInput(title="hey", value='my sine wave')
 offset = Slider(title="offset", value=0.0, start=-5.0, end=5.0, step=0.1)
 amplitude = Slider(title="amplitude", value=1.0, start=-5.0, end=5.0, step=0.1)
 phase = Slider(title="phase", value=0.0, start=0.0, end=2*np.pi)

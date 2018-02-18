@@ -8,12 +8,16 @@ from bokeh.models.widgets import Slider, TextInput
 from bokeh.plotting import figure
 from bokeh.palettes import Spectral4
 
+from constants import currencies, periods, remote
+from sources.historical import CryptowatchSource, KunaIoSource
+from persistence.postgre import TimeSeriesStore
 
 # Set up data
 N = 200
 x = np.linspace(0, 4*np.pi, N)
 y = np.sin(x)
 source = ColumnDataSource(data=dict(x=x, y=y))
+
 
 def refresh_data():
     target_df = pd.read_pickle('target_df.pkl')
@@ -25,6 +29,7 @@ def refresh_data():
     orders_df = pd.read_pickle('order_df.pkl')
     orders_df.sort_index(inplace=True)
     return source_df, target_df, orders_df
+
 
 def init_plot(source_df, target_df, orders_df, y_range=(8000, 9000)):
     TOOLS = "pan,wheel_zoom,xwheel_zoom,box_zoom,reset,save"
@@ -43,21 +48,6 @@ def init_plot(source_df, target_df, orders_df, y_range=(8000, 9000)):
     pd.to_pickle(target_df, 'target_df.pkl')
     sleep(1)
 
-
-# Set up plot
-plot = figure(plot_height=1000, plot_width=400, title="my sine wave",
-              tools="crosshair,pan,reset,save,wheel_zoom",
-              x_range=[0, 4*np.pi], y_range=[-2.5, 2.5])
-
-plot.line('x', 'y', source=source, line_width=3, line_alpha=0.6)
-
-
-# Set up widgets
-text = TextInput(title="title", value='my sine wave')
-offset = Slider(title="offset", value=0.0, start=-5.0, end=5.0, step=0.1)
-amplitude = Slider(title="amplitude", value=1.0, start=-5.0, end=5.0, step=0.1)
-phase = Slider(title="phase", value=0.0, start=0.0, end=2*np.pi)
-freq = Slider(title="frequency", value=1.0, start=0.1, end=5.1, step=0.1)
 
 
 # Set up callbacks
