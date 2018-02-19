@@ -118,11 +118,6 @@ class TimeSeriesStore(object):
             else:
                 return False
 
-    def init_dataframe(self):
-        print("[info] Loading data for {}".format(self.name))
-        self._df = self._perform_load()
-        return self._df
-
     def write(self, data):
         df = self._prepare_data(data)
         self._update_cache(df)
@@ -290,20 +285,3 @@ class TimeSeriesStore(object):
             if getsizeof(self._local_cache) > self._new_row_policy:
                 return True
         return False
-
-    def _update_df(self, new_data):
-        if len(new_data) == 0:
-            return self.dataframe
-
-        rv = pd.concat([self.dataframe, new_data])
-        if self._duplicates_field:
-            rv = rv.drop_duplicates(subset=self._duplicates_field)
-        # rv.sort_index(inplace=True)
-        self._df = rv
-        return rv
-
-    @property
-    def dataframe(self):
-        if self._df is None:
-            self._df = self.init_dataframe()
-        return self._df
