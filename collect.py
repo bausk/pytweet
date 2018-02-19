@@ -52,15 +52,15 @@ if __name__ == "__main__":
 
 
     while True:
-        source_store.append(source_rates.fetch_latest_trades(limit=100))
-        target_store.append(target_rates.fetch_latest_trades())
+        source_store.write(source_rates.fetch_latest_trades(limit=100))
+        target_store.write(target_rates.fetch_latest_trades())
         order_book = target_rates.fetch_order_book()
 
         # Add new order book call
         record = orderbook_to_record(order_book)
         if record['timestamp'] is not None:
             tmp_book = pd.Series(record)
-            orderbook_store.append(tmp_book)
+            orderbook_store.write(tmp_book)
 
         sleep(1)
         # print(source_store)
