@@ -32,7 +32,6 @@ freq = Slider(title="frequency", value=1.0, start=0.1, end=5.1, step=0.1)
 def update_title(attrname, old, new):
     plot.title.text = text.value
 
-text.on_change('value', update_title)
 
 def update_data(attrname, old, new):
     # Get the current slider values
@@ -40,13 +39,12 @@ def update_data(attrname, old, new):
     b = offset.value
     w = phase.value
     k = freq.value
-
     # Generate the new curve
     x = np.linspace(0, 4*np.pi, N)
     y = a*np.sin(k*x + w) + b
-
     source.data = dict(x=x, y=y)
 
+text.on_change('value', update_title)
 for w in [offset, amplitude, phase, freq]:
     w.on_change('value', update_data)
 

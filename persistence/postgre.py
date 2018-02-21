@@ -7,6 +7,7 @@ import pandas as pd
 from sys import getsizeof
 from pandas.core.base import DataError
 from datetime import datetime, timedelta
+import dateutil.parser
 import numpy as np
 
 from constants import formats
@@ -61,16 +62,26 @@ class TimeSeriesStore(object):
             ('metadata', self._fetch_json),
             ('id', lambda x: x)]
 
-    def _fetch_datetime(self, val):
-        return pd.to_datetime(val)
+    def write(self, data):
+        df = self._prepare_data(data)
+        self._update_cache(df)
 
-    def _fetch_json(self, val):
-        if type(val) == str:
-            return json.loads(val)
+    def read_latest(self, since=None):
+        if isinstance(since, datetime):
+            pass
+        elif since is None:
+            since = datetime.utcnow() - timedelta(hours=6.0)
         else:
-            return val
+            try:
+                since = dateutil.parser.parse(since)
+            except BaseException as e:
+                raise TypeError("Bad `since` value in TimeSeriesStore.read_latest(...)!")
 
-    def init_table(self, name=None, user=None):
+        result = self._perform_limited_pure_load(since)
+        return self._remote_to_df(result)
+
+
+    def _init_table(self, name=None, user=None):
         if user is None:
             user = self._username
         if name is None:
@@ -103,6 +114,20 @@ class TimeSeriesStore(object):
         self._table_connected = True
         return True
 
+    def _perform_limited_pure_load(self, since):
+        connection = ensure_connection(conn)
+        cur = connection.cursor()
+        command = """
+        select * from public.{name}
+        order by id desc 
+        limit 2
+        ;
+        """.format(name=self.name)
+        cur.execute(command, (since,))
+        res = cur.fetchall()
+        prepared_result = [self._row(x) for x in res]
+        return prepared_result
+
     def _connect_table(self, init=True):
         connection = ensure_connection(conn)
         cur = connection.cursor()
@@ -114,15 +139,11 @@ class TimeSeriesStore(object):
             return True
         else:
             if init:
-                return self.init_table()
+                return self._init_table()
             else:
                 return False
 
-    def write(self, data):
-        df = self._prepare_data(data)
-        self._update_cache(df)
-
-    def _init(self):
+    def _get_initial_store(self):
         if not self._table_connected:
             self._connect_table()
         connection = ensure_connection(conn)
@@ -216,7 +237,7 @@ class TimeSeriesStore(object):
 
     def _ensure_cache(self):
         if self._local_cache is None:
-            self._local_cache = self._init()
+            self._local_cache = self._get_initial_store()
 
     def _remote_to_df(self, data):
         res = {}
@@ -241,19 +262,6 @@ class TimeSeriesStore(object):
         _df['Time'] = pd.to_datetime(_df.index, unit="s")
         _df.set_index('Time', inplace=True)
         return _df
-
-    def _perform_load(self):
-        if not self._table_connected:
-            self._connect_table()
-        connection = ensure_connection(conn)
-        cur = connection.cursor()
-        command = """
-        select * from public.{name};
-        """.format(name=self.name)
-        cur.execute(command)
-        res = cur.fetchall()
-        prepared_result = [self._row(x) for x in res]
-        return self._remote_to_df(prepared_result)
 
     def _row(self, data):
         return {spec[0]: row for row, spec in zip(data, self._table_spec)}
@@ -285,3 +293,12 @@ class TimeSeriesStore(object):
             if getsizeof(self._local_cache) > self._new_row_policy:
                 return True
         return False
+
+    def _fetch_datetime(self, val):
+        return pd.to_datetime(val)
+
+    def _fetch_json(self, val):
+        if type(val) == str:
+            return json.loads(val)
+        else:
+            return val
