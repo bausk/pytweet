@@ -38,7 +38,7 @@ conn = reconnect()
 class TimeSeriesStore(object):
 
     def __init__(self, name, columns, update_period=None, time_field='timestamp', time_unit=None,
-                 duplicates_field=None):
+                 duplicates_field=None, x_shift_hours=0):
         if update_period is None:
             update_period = timedelta(seconds=60)
         self._username = url.username
@@ -54,6 +54,7 @@ class TimeSeriesStore(object):
         self._time_unit = time_unit
         self._table_connected = False
         self._current_trunk_id = None
+        self._x_shift = None if x_shift_hours == 0 else timedelta(hours=x_shift_hours)
         self._trunk_opened_datetime = None
         self._table_spec = [
             ('created_at', self._fetch_datetime),
@@ -259,7 +260,10 @@ class TimeSeriesStore(object):
 
     def _internal_to_df(self, data):
         _df = pd.DataFrame.from_dict(data, orient='index')
-        _df['Time'] = pd.to_datetime(_df.index, unit="s")
+        if self._x_shift is None:
+            _df['Time'] = pd.to_datetime(_df.index, unit="s")
+        else:
+            _df['Time'] = pd.to_datetime(_df.index, unit="s") - self._x_shift
         _df.set_index('Time', inplace=True)
         return _df
 

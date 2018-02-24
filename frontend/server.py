@@ -25,7 +25,7 @@ def init_plot(y_range=(USD_LOW, USD_HIGH)):
 
 def serve_frontend(doc):
     src_store = TimeSeriesStore(name="bitfinex_btcusd", columns=formats.history_format, time_unit="s", time_field="timestamp")
-    tgt_store = TimeSeriesStore(name="kuna_btcuah", columns=formats.history_format, time_unit="s")
+    tgt_store = TimeSeriesStore(name="kuna_btcuah", columns=formats.history_format, time_unit="s", x_shift_hours=2)
     ord_store = TimeSeriesStore(name="kuna_orderbook", columns=formats.orderbook_format, time_unit="s")
 
     src_df = src_store.read_latest()
