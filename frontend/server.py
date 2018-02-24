@@ -36,9 +36,9 @@ def serve_frontend(doc):
     tgt_store = PandasReader(name="kuna_btcuah", columns=formats.history_format, time_unit="s", x_shift_hours=0)
     ord_store = PandasReader(name="kuna_orderbook", columns=formats.orderbook_format, time_unit="s")
 
-    src_df = src_store.read_latest()
-    tgt_df = tgt_store.read_latest()
-    ord_df = ord_store.read_latest()
+    src_df = src_store.read_latest(trunks=3)
+    tgt_df = tgt_store.read_latest(trunks=5)
+    ord_df = ord_store.read_latest(trunks=10)
     source_src = ColumnDataSource(data=dict(Time=src_df.index, price=src_df.price))
     source_tgt = ColumnDataSource(data=dict(Time=tgt_df.index, price=tgt_df.price, volume=tgt_df['volume'].multiply(100)))
     source_ord = ColumnDataSource(data=dict(Time=ord_df.index, ask=ord_df.ask, bid=ord_df.bid))
@@ -57,9 +57,9 @@ def serve_frontend(doc):
         nonlocal tgt_df
         nonlocal ord_df
         try:
-            src_df = src_store.read_latest()
-            tgt_df =  tgt_store.read_latest()
-            ord_df = ord_store.read_latest()
+            src_df = src_store.read_latest(trunks=3)
+            tgt_df = tgt_store.read_latest(trunks=5)
+            ord_df = ord_store.read_latest(trunks=10)
             source_src.data = dict(Time=src_df.index, price=src_df.price)
             source_tgt.data = dict(Time=tgt_df.index, price=tgt_df.price, volume=tgt_df['volume'].multiply(100))
             source_ord.data = dict(Time=ord_df.index, ask=ord_df.ask, bid=ord_df.bid)

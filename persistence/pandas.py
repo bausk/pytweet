@@ -7,7 +7,7 @@ from .postgre import TimeSeriesStore
 
 class PandasReader(TimeSeriesStore):
 
-    def read_latest(self, since=None):
+    def read_latest(self, since=None, trunks=2):
         if isinstance(since, datetime):
             pass
         elif since is None:
@@ -18,19 +18,19 @@ class PandasReader(TimeSeriesStore):
             except BaseException as e:
                 raise TypeError("Bad `since` value in TimeSeriesStore.read_latest(...)!")
 
-        result = self._perform_limited_pure_load(since)
+        result = self._perform_limited_pure_load(since=since, trunks=trunks)
         return self._remote_to_df(result)
 
-    def _perform_limited_pure_load(self, since):
+    def _perform_limited_pure_load(self, since=None, trunks=2):
         connection = self._ensure_connection()
         cur = connection.cursor()
         command = """
         select * from public.{name}
         order by id desc 
-        limit 2
+        limit {trunks}
         ;
-        """.format(name=self.name)
-        cur.execute(command, (since,))
+        """.format(name=self.name, trunks=trunks)
+        cur.execute(command)
         res = cur.fetchall()
         prepared_result = [self._row(x) for x in res]
         return prepared_result
