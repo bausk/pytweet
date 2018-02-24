@@ -109,7 +109,7 @@ class KunaIoSource(CurrencySource):
             conversion_rate = 1
 
         return [dict(
-            timestamp=int(parser.parse(x['created_at'], ignoretz=True).timestamp()),
+            timestamp=int(parser.parse(x['created_at']).timestamp()),
             created_at=x['created_at'],
             price=float(x['price']) / conversion_rate,
             volume=float(x['volume']),

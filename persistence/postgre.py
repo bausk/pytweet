@@ -2,15 +2,10 @@ import os
 from urllib import parse
 import psycopg2
 from psycopg2.extras import Json
-import json
 import pandas as pd
 from sys import getsizeof
 from pandas.core.base import DataError
 from datetime import datetime, timedelta
-import dateutil.parser
-import numpy as np
-
-from constants import formats
 
 parse.uses_netloc.append("postgres")
 url = parse.urlparse(os.environ["DATABASE_URL"])
@@ -24,18 +19,9 @@ def reconnect():
         port=url.port
     )
 
-def ensure_connection(connection):
-    try:
-        connection.isolation_level
-        return connection
-    except BaseException as e:
-        return reconnect()
-
-
-conn = reconnect()
-
 
 class TimeSeriesStore(object):
+    conn = reconnect()
 
     def __init__(self, name, columns, update_period=None, time_field='timestamp', time_unit=None,
                  duplicates_field=None, x_shift_hours=0):
@@ -57,30 +43,23 @@ class TimeSeriesStore(object):
         self._x_shift = None if x_shift_hours == 0 else timedelta(hours=x_shift_hours)
         self._trunk_opened_datetime = None
         self._table_spec = [
-            ('created_at', self._fetch_datetime),
-            ('collected_at', self._fetch_datetime),
-            ('data', self._fetch_json),
-            ('metadata', self._fetch_json),
-            ('id', lambda x: x)]
+            'created_at',
+            'collected_at',
+            'data',
+            'metadata',
+            'id'
+        ]
 
     def write(self, data):
         df = self._prepare_data(data)
         self._update_cache(df)
 
-    def read_latest(self, since=None):
-        if isinstance(since, datetime):
-            pass
-        elif since is None:
-            since = datetime.utcnow() - timedelta(hours=6.0)
-        else:
-            try:
-                since = dateutil.parser.parse(since)
-            except BaseException as e:
-                raise TypeError("Bad `since` value in TimeSeriesStore.read_latest(...)!")
-
-        result = self._perform_limited_pure_load(since)
-        return self._remote_to_df(result)
-
+    def _ensure_connection(self):
+        try:
+            self.conn.isolation_level
+        except BaseException as e:
+            self.conn = reconnect()
+        return self.conn
 
     def _init_table(self, name=None, user=None):
         if user is None:
@@ -106,7 +85,7 @@ class TimeSeriesStore(object):
                 OWNER to {user};
         """.format(name=name, user=user)
 
-        connection = ensure_connection(conn)
+        connection = self._ensure_connection()
         cur = connection.cursor()
         cur.execute(command)
         connection.commit()
@@ -115,22 +94,9 @@ class TimeSeriesStore(object):
         self._table_connected = True
         return True
 
-    def _perform_limited_pure_load(self, since):
-        connection = ensure_connection(conn)
-        cur = connection.cursor()
-        command = """
-        select * from public.{name}
-        order by id desc 
-        limit 2
-        ;
-        """.format(name=self.name)
-        cur.execute(command, (since,))
-        res = cur.fetchall()
-        prepared_result = [self._row(x) for x in res]
-        return prepared_result
 
     def _connect_table(self, init=True):
-        connection = ensure_connection(conn)
+        connection = self._ensure_connection()
         cur = connection.cursor()
         cur.execute("select exists(select * from information_schema.tables where table_name=%s)", (self.name,))
         result = cur.fetchone()[0]
@@ -147,7 +113,7 @@ class TimeSeriesStore(object):
     def _get_initial_store(self):
         if not self._table_connected:
             self._connect_table()
-        connection = ensure_connection(conn)
+        connection = self._ensure_connection()
         cur = connection.cursor()
         command = """
         select * from public.{name}
@@ -169,7 +135,7 @@ class TimeSeriesStore(object):
     def _start_new_trunk(self, data):
         if not self._table_connected:
             self._connect_table()
-        connection = ensure_connection(conn)
+        connection = self._ensure_connection()
         cur = connection.cursor()
         command = """
         insert into public.{name} (created_at, collected_at, data, metadata) values (%s, %s, %s, %s) returning id;
@@ -268,12 +234,12 @@ class TimeSeriesStore(object):
         return _df
 
     def _row(self, data):
-        return {spec[0]: row for row, spec in zip(data, self._table_spec)}
+        return {spec: row for row, spec in zip(data, self._table_spec)}
 
     def _perform_persist(self):
         if not self._table_connected:
             self._connect_table()
-        connection = ensure_connection(conn)
+        connection = self._ensure_connection()
         self._ensure_cache()
         cur = connection.cursor()
         command = """
@@ -297,12 +263,3 @@ class TimeSeriesStore(object):
             if getsizeof(self._local_cache) > self._new_row_policy:
                 return True
         return False
-
-    def _fetch_datetime(self, val):
-        return pd.to_datetime(val)
-
-    def _fetch_json(self, val):
-        if type(val) == str:
-            return json.loads(val)
-        else:
-            return val
