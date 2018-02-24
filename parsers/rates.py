@@ -14,6 +14,19 @@ def fit_rates(rate1: pd.DataFrame, rate2: pd.DataFrame, period=2, minutes=10):
     target_mean = target_frame['price'].mean()
     return source_mean / target_mean
 
+def get_rate(source_rate: pd.DataFrame, target_orderbook: pd.DataFrame, start=timedelta(hours=3), end=timedelta(minutes=10)):
+    curtime = datetime.utcnow()
+    end_time = curtime - end
+    start_time = curtime - start
+    source_frame: pd.DataFrame = source_rate.truncate(before=start_time, after=end_time, copy=True)
+    target_frame: pd.DataFrame = target_orderbook.truncate(before=start_time, after=end_time, copy=True)
+
+    source_frame = source_frame.resample('1T').mean().interpolate()
+    target_frame = target_frame.resample('1T').mean().interpolate()
+    source_mean = source_frame['price'].mean()
+    target_mean = (target_frame['ask'].mean() + target_frame['bid'].mean()) / 2
+    return source_mean / target_mean
+
 def orderbook_to_record(orderbook, coeff=1.0):
     res = dict(timestamp=None, bid=0.0, ask=0.0, bid_volume=0.0, bid_weight=0.0, ask_volume=0.0, ask_weight=0.0)
     if len(orderbook['asks']) == 0 or len(orderbook['bids']) == 0:
