@@ -45,7 +45,7 @@ class TimeSeriesStore(object):
         self.name = name
         self._columns = columns
         self._persist_frequency = update_period # No persist frequency will result in updating DB on every run
-        self._new_row_policy = 200000
+        self._new_row_policy = 20000
         self._df: pd.DataFrame = None
         self._last_updated = datetime.utcnow()
         self._local_cache = None

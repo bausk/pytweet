@@ -36,25 +36,19 @@ def serve_frontend(doc):
     source_ord = ColumnDataSource(data=ord_df)
 
     plot = init_plot()
-    # plot2 = init_plot()
 
     plot.line('Time', 'price', source=source_src, line_width=3, color=Spectral4[0], alpha=0.8, legend="SRC")
     plot.line('Time', 'price', source=source_tgt, line_width=3, color=Spectral4[1], alpha=0.8, legend="TGT", y_range_name="BTCUAH")
     plot.line('Time', 'bid', source=source_ord, line_width=1, color=Spectral4[2], alpha=1, legend="Bid", y_range_name="BTCUAH")
     plot.line('Time', 'ask', source=source_ord, line_width=1, color=Spectral4[3], alpha=1, legend="Ask", y_range_name="BTCUAH")
-    #
-    # plot2.line('Time', 'price', source=source_src, line_width=3, color=Spectral4[0], alpha=0.8, legend="SRC")
-    # plot2.line('Time', 'price', source=source_tgt, line_width=3, color=Spectral4[1], alpha=0.8, legend="TGT", y_range_name="BTCUAH")
-    # plot2.line('Time', 'bid', source=source_ord, line_width=1, color=Spectral4[2], alpha=1, legend="Bid", y_range_name="BTCUAH")
-    # plot2.line('Time', 'ask', source=source_ord, line_width=1, color=Spectral4[3], alpha=1, legend="Ask", y_range_name="BTCUAH")
-    #
-    # output_file("arbitrage3.html", title="Arbitrage between cryptowat.ch and kuna.io")
-    # save(plot2)
-    # Set up widgets
+
     wgt_refresh = Button(label='Refresh')
 
     def on_refresh(button):
         button.label = 'OK...'
+        src_df = src_store.read_latest()
+        tgt_df = tgt_store.read_latest()
+        ord_df = ord_store.read_latest()
 
     wgt_refresh.on_click(lambda: on_refresh(wgt_refresh))
 
