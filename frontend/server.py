@@ -1,9 +1,11 @@
 from bokeh.layouts import row, widgetbox
 from bokeh.models import ColumnDataSource, Range1d, LinearAxis, DatetimeTicker, DatetimeTickFormatter
-from bokeh.models.widgets import TextInput, Button
+from bokeh.models.widgets import TextInput, Button, DataTable, DateFormatter, TableColumn
 from bokeh.plotting import figure
 from bokeh.palettes import Spectral4
 import math
+
+from datetime import timedelta, datetime
 
 from parsers.rates import get_rate
 from persistence.pandas import PandasReader
@@ -36,9 +38,9 @@ def serve_frontend(doc):
     tgt_store = PandasReader(name="kuna_btcuah", columns=formats.history_format, time_unit="s", x_shift_hours=0)
     ord_store = PandasReader(name="kuna_orderbook", columns=formats.orderbook_format, time_unit="s")
 
-    src_df = src_store.read_latest(trunks=3)
-    tgt_df = tgt_store.read_latest(trunks=5)
-    ord_df = ord_store.read_latest(trunks=10)
+    src_df = src_store.read_latest(trunks=5)
+    tgt_df = tgt_store.read_latest(trunks=10)
+    ord_df = ord_store.read_latest(trunks=20)
     source_src = ColumnDataSource(data=dict(Time=src_df.index, price=src_df.price))
     source_tgt = ColumnDataSource(data=dict(Time=tgt_df.index, price=tgt_df.price, volume=tgt_df['volume'].multiply(100)))
     source_ord = ColumnDataSource(data=dict(Time=ord_df.index, ask=ord_df.ask, bid=ord_df.bid))
@@ -51,15 +53,24 @@ def serve_frontend(doc):
     plot.line('Time', 'bid', source=source_ord, line_width=1, color=Spectral4[2], alpha=1, legend="Bid", y_range_name="BTCUAH", line_join='round')
     plot.line('Time', 'ask', source=source_ord, line_width=1, color=Spectral4[3], alpha=1, legend="Ask", y_range_name="BTCUAH", line_join='round')
 
+    wgt_start_date = TextInput(title="Start at hours before now:", value='5')
+    wgt_end_date = TextInput(title="End at hours before now:", value='0')
+
+    wgt_start_date_analyze = TextInput(title="Start at hours before now:", value='10')
+    wgt_end_date_analyze = TextInput(title="End at hours before now:", value='0')
+
+    wgt_autoscale_starthours = TextInput(title="Start at hours before end hour:", value='3')
+    wgt_autoscale_endhours = TextInput(title="Start at hours before end hour:", value=str(10/60))
+
     wgt_refresh = Button(label='Refresh', button_type='success')
     def on_refresh(button):
         nonlocal src_df
         nonlocal tgt_df
         nonlocal ord_df
         try:
-            src_df = src_store.read_latest(trunks=3)
-            tgt_df = tgt_store.read_latest(trunks=5)
-            ord_df = ord_store.read_latest(trunks=10)
+            src_df = src_store.read_latest(start=float(wgt_start_date.value), end=float(wgt_end_date.value))
+            tgt_df = tgt_store.read_latest(start=float(wgt_start_date.value), end=float(wgt_end_date.value))
+            ord_df = ord_store.read_latest(start=float(wgt_start_date.value), end=float(wgt_end_date.value))
             source_src.data = dict(Time=src_df.index, price=src_df.price)
             source_tgt.data = dict(Time=tgt_df.index, price=tgt_df.price, volume=tgt_df['volume'].multiply(100))
             source_ord.data = dict(Time=ord_df.index, ask=ord_df.ask, bid=ord_df.bid)
@@ -67,24 +78,47 @@ def serve_frontend(doc):
             print(e)
     wgt_refresh.on_click(lambda: on_refresh(wgt_refresh))
 
-    wgt_text = TextInput(title="Manual Rate:", value=str(DEFAULT_COEFF))
+    wgt_manualrate = TextInput(title="Manual Rate:", value=str(DEFAULT_COEFF))
     def on_coeff_change(attrname, old, new):
         print(attrname, old, new)
         plot.extra_y_ranges['BTCUAH'].start = plot.y_range.start * float(new)
         plot.extra_y_ranges['BTCUAH'].end = plot.y_range.end * float(new)
-    wgt_text.on_change('value', on_coeff_change)
+    wgt_manualrate.on_change('value', on_coeff_change)
 
     wgt_autoscale = Button(label='Autoscale')
     def on_autoscale(button):
         nonlocal src_df
         nonlocal ord_df
-        rate = get_rate(src_df, ord_df)
+        rate = get_rate(src_df, ord_df,
+                        start=timedelta(hours=(float(wgt_autoscale_starthours.value) + float(wgt_end_date.value))),
+                        end=timedelta(hours=(float(wgt_autoscale_endhours.value) + float(wgt_end_date.value)))
+                        )
         if math.isnan(rate):
             pass
         else:
-            wgt_text.value = "{0:.3f}".format(1 / rate)
+            wgt_manualrate.value = "{0:.3f}".format(1 / rate)
     wgt_autoscale.on_click(lambda: on_autoscale(on_autoscale))
 
-    inputs = widgetbox(wgt_refresh, wgt_text, wgt_autoscale)
+    wgt_analyze = Button(label='Analyze', button_type='primary')
+    # data = dict(
+    #     ids=[],
+    #     dates=[],
+    # )
+    # source = ColumnDataSource(data)
+    # columns = [
+    #     TableColumn(field="ids", title="Trunk id"),
+    #     TableColumn(field="dates", title="Start date")
+    # ]
+    # data_table = DataTable(source=source, columns=columns, width=400, height=280)
+
+    inputs = widgetbox(
+        wgt_refresh,
+        wgt_start_date, wgt_end_date,
+        wgt_autoscale,
+        wgt_autoscale_starthours, wgt_autoscale_endhours,
+        wgt_manualrate,
+        wgt_analyze,
+        wgt_start_date_analyze, wgt_end_date_analyze
+    )
     doc.add_root(row(inputs, plot, width=1500))
     doc.title = "Arbitrage Controller"
