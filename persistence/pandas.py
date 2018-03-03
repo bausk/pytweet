@@ -3,17 +3,14 @@ import dateutil.parser
 from psycopg2.extras import Json
 import pandas as pd
 from .postgre import TimeSeriesStore
-
+from objects.dataframes import create_empty_dataframe
 
 class PandasReader(TimeSeriesStore):
 
     def __init__(self, name, columns, **kw):
         super().__init__(name, columns, **kw)
         self._loaded_chunks = {}
-        _df = pd.DataFrame(columns=['created_at', 'id', 'loaded'])
-        _df['Time'] = pd.to_datetime(_df.created_at)
-        _df.set_index('Time', inplace=True)
-        self._segments_df = _df
+        self._segments_df = create_empty_dataframe(['created_at', 'id', 'loaded'])
         self._df = None
         self._last_queried = None
 

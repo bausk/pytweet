@@ -1,0 +1,12 @@
+
+
+class MONITOR_CHART_NAMES:
+    TARGET = 'TGT'
+    SOURCE = 'SRC'
+    VOLUMES = 'TGTVOLS'
+    TGT_BID = 'TGTBID'
+    TGT_ASK = 'TGTASK'
+
+
+class INDICATOR_NAMES:
+    SIMPLE = 'IND_SIMPLE'
