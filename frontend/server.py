@@ -1,12 +1,15 @@
+import os
+import math
+import json
+from datetime import timedelta, datetime
+
 from bokeh.layouts import row, widgetbox
-from bokeh.models import ColumnDataSource, Range1d, LinearAxis, DatetimeTicker, DatetimeTickFormatter
-from bokeh.models.widgets import TextInput, Button, DataTable, DateFormatter, TableColumn, PreText
+from bokeh.models import ColumnDataSource, Range1d, LinearAxis, DatetimeTicker, CustomJS
+from bokeh.models.widgets import TextInput, Button, PreText, Toggle
 from bokeh.plotting import figure
 from bokeh.palettes import Spectral4
-import math
 
 from analyzers.simple import BaseArbitrageAnalyzer
-from datetime import timedelta, datetime
 
 from parsers.rates import get_rate
 from persistence.pandas import PandasReader
@@ -17,6 +20,7 @@ DEFAULT_COEFF = 27.0
 USD_LOW = 10000
 USD_HIGH = 12000
 
+KUNA_AUTH = json.loads(os.getenv("KUNA_AUTH", "{}"))
 
 def init_plot(y_range=(USD_LOW, USD_HIGH)):
     tools = "pan,wheel_zoom,xwheel_zoom,box_zoom,reset,save"
@@ -29,7 +33,7 @@ def init_plot(y_range=(USD_LOW, USD_HIGH)):
     p.xaxis.ticker = DatetimeTicker(desired_num_ticks=18)
     p.extra_y_ranges = {
         "BTCUAH": Range1d(start=y_range[0] * DEFAULT_COEFF, end=y_range[1] * DEFAULT_COEFF),
-        "UNITLESS": Range1d(start=-5.0, end=10.0),
+        "UNITLESS": Range1d(start=-15.0, end=25.0),
     }
     p.add_layout(LinearAxis(y_range_name="BTCUAH"), 'left')
     p.add_layout(LinearAxis(y_range_name="UNITLESS"), 'right')
@@ -63,8 +67,8 @@ def serve_frontend(doc):
     wgt_start_date = TextInput(title="Start at hours before now:", value='5')
     wgt_end_date = TextInput(title="End at hours before now:", value='0')
 
-    wgt_analyze_start = TextInput(title="Start at hours before now:", value='10')
-    wgt_analyze_end = TextInput(title="End at hours before now:", value='0')
+    wgt_analyze_start = TextInput(title="Start at hours before now:", value='2018-02-27 10:00')
+    wgt_analyze_end = TextInput(title="End at hours before now:", value='2018-02-27 14:00')
 
     wgt_autoscale_starthours = TextInput(title="Start at hours before end hour:", value='3')
     wgt_autoscale_endhours = TextInput(title="Start at hours before end hour:", value=str(10/60))
@@ -125,6 +129,22 @@ def serve_frontend(doc):
         source_src.data = dict(Time=src_df.index, price=src_df.price)
     wgt_analyze.on_click(lambda: on_analyze(wgt_analyze))
 
+    fixate = Toggle(label='Fix Y Axis')
+    def on_fix(button, state):
+        console.text += "Changing fix to: " + str(state) + "\n"
+        if state:
+            jscode = """
+                    range.start = parseInt({start});
+                    range.end = parseInt({end});
+                """
+            plot.extra_y_ranges['UNITLESS'].callback = CustomJS(
+                args=dict(range=plot.extra_y_ranges['UNITLESS']),
+                code=jscode.format(start=plot.extra_y_ranges['UNITLESS'].start,
+                                   end=plot.extra_y_ranges['UNITLESS'].end)
+            )
+        else:
+            plot.extra_y_ranges['UNITLESS'].callback = None
+    fixate.on_click(lambda x: on_fix(fixate, x))
 
     inputs = widgetbox(
         wgt_refresh,
@@ -134,6 +154,7 @@ def serve_frontend(doc):
         wgt_manualrate,
         wgt_analyze,
         wgt_analyze_start, wgt_analyze_end,
+        fixate,
         console
     )
     doc.add_root(row(inputs, plot, width=1500))

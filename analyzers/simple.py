@@ -1,9 +1,10 @@
-from bokeh.models import BoxAnnotation, ColumnDataSource
+from bokeh.models import BoxAnnotation, ColumnDataSource, CustomJS
 from bokeh.plotting import Figure
 from bokeh.palettes import Spectral10, Category10
 from datetime import datetime, timedelta
 from dateutil import parser
 from typing import Tuple, Union, Any
+import pandas as pd
 
 
 from objects.dataframes import create_empty_dataframe
@@ -64,23 +65,76 @@ class BaseArbitrageAnalyzer:
         # Get indicator
         arbitrage_indicator = arbitrage_difference / normalized_ask_bid_distance
         # filter indicator for values more than 1.5
-        arbitrage_indicator.loc[(arbitrage_indicator < 1.5) & (arbitrage_indicator > -0.8)] = 0
+        arbitrage_indicator.loc[arbitrage_indicator < 1.5] = 0
         weighted_arbitrage_indicator = arbitrage_indicator.rolling('180s').sum()
+        sell_difference = ((src_df['price'] * coeffs) - ord_df['bid'])
+        sell_indicator = sell_difference / normalized_ask_bid_distance
+        sell_indicator.loc[sell_indicator > -0.8] = 0
+        weighted_sell_indicator = sell_indicator.rolling('180s').sum()
         self._console.text += "[info] Calculated indicators\n"
-        line = self._line(NAMES.SIMPLE, arbitrage_indicator, color=Category10[10][3])
-        line2 = self._line(NAMES.WEIGTHED, weighted_arbitrage_indicator, color=Category10[10][4])
+        line = self._line(NAMES.SIMPLE, weighted_arbitrage_indicator, color=Category10[10][3])
+        sell_line = self._line(NAMES.WEIGTHED, weighted_sell_indicator, color=Category10[10][4])
 
-        for renderer in self._annotations:
-            if renderer in self._plot.renderers:
-                self._plot.renderers[self._plot.renderers.index(renderer)].left = 0
-                self._plot.renderers[self._plot.renderers.index(renderer)].right = 0
-                renderer.left = 0
-                renderer.right = 0
-                renderer.visible = False
-        annotation = BoxAnnotation(left=datetime.utcnow() - timedelta(hours=2), right=datetime.utcnow())
-        self._plot.add_layout(annotation)
-        self._annotations.append(annotation)
+        buy_threshold = 8
+        buy_condition = (weighted_arbitrage_indicator > buy_threshold) & (weighted_arbitrage_indicator.shift(1) <= buy_threshold)
+        sell_threshold = -5
+        sell_condition = (weighted_sell_indicator < sell_threshold) & (weighted_sell_indicator.shift(1) >= sell_threshold)
+
+        buy_condition.name = "buy"
+        sell_condition.name = "sell"
+        combined = pd.concat([ord_df, buy_condition, sell_condition], axis=1)
+        deals = []
+        new_deal = {
+            'status': None,
+            'buytime': None,
+            'selltime': None,
+            'buyprice': None,
+            'sellprice': None,
+            'profit': 0.0
+        }
+        current_deal = {}
+        current_deal.update(new_deal)
+        for idx, row in combined.iterrows():
+            buy = row.buy
+            sell = row.sell
+            if buy and current_deal['status'] is None:
+                # Open the deal
+                current_deal['status'] = True
+                current_deal['buytime'] = idx
+                current_deal['buyprice'] = row.ask
+            if sell and current_deal['status'] is not None:
+                # Close the deal and wipe current
+                current_deal['selltime'] = idx
+                current_deal['sellprice'] = row.bid
+                current_deal['profit'] = (current_deal['sellprice'] - current_deal['buyprice'] - current_deal['buyprice'] * 0.005) / current_deal['buyprice'] * 100
+                self._console.text += str(current_deal['profit']) + "%\n"
+                deals.append(current_deal)
+                current_deal = {}
+                current_deal.update(new_deal)
+
+        mean_profit = 0
+        for deal in deals:
+            self._draw_deal(deal)
+            mean_profit += deal['profit']
+        if len(deals) > 0:
+            self._console.text += "Mean profit: {}.\n".format(mean_profit / len(deals))
+        self._console.text += "[info] Done.\n"
+
+        # for renderer in self._annotations:
+        #     if renderer in self._plot.renderers:
+        #         self._plot.renderers[self._plot.renderers.index(renderer)].left = 0
+        #         self._plot.renderers[self._plot.renderers.index(renderer)].right = 0
+        #         renderer.left = 0
+        #         renderer.right = 0
+        #         renderer.visible = False
+        # annotation = BoxAnnotation(left=datetime.utcnow() - timedelta(hours=2), right=datetime.utcnow())
+        # self._plot.add_layout(annotation)
+        # self._annotations.append(annotation)
+
         return arbitrage_indicator, src_df, ord_df
+
+    def _draw_deal(self, deal):
+        self._plot.line([deal['buytime'], deal['selltime']], [deal['buyprice'], deal['sellprice']], line_width=4, color='red', alpha=0.5)
 
     def _ensure_data(self, start_diff, end_diff):
         src_df = self._input['src_store'].read_latest(start=start_diff, end=end_diff)
