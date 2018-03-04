@@ -29,8 +29,10 @@ def init_plot(y_range=(USD_LOW, USD_HIGH)):
     p.xaxis.ticker = DatetimeTicker(desired_num_ticks=18)
     p.extra_y_ranges = {
         "BTCUAH": Range1d(start=y_range[0] * DEFAULT_COEFF, end=y_range[1] * DEFAULT_COEFF),
+        "UNITLESS": Range1d(start=-5.0, end=10.0),
     }
     p.add_layout(LinearAxis(y_range_name="BTCUAH"), 'left')
+    p.add_layout(LinearAxis(y_range_name="UNITLESS"), 'right')
     return p
 
 
@@ -118,7 +120,9 @@ def serve_frontend(doc):
     )
     def on_analyze(button):
         print(button)
-        analyzer.analyze()
+        _, src_df, ord_df = analyzer.analyze()
+        source_ord.data = dict(Time=ord_df.index, ask=ord_df.ask, bid=ord_df.bid)
+        source_src.data = dict(Time=src_df.index, price=src_df.price)
     wgt_analyze.on_click(lambda: on_analyze(wgt_analyze))
 
 
