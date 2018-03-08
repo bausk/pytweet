@@ -13,6 +13,7 @@ from analyzers.simple import BaseArbitrageAnalyzer
 
 from parsers.rates import get_rate
 from persistence.pandas import PandasReader
+from models.trader import PandasTrader, KunaIOTrader
 from constants import formats
 from constants.constants import MONITOR_CHART_NAMES as GLYPHNAMES
 
@@ -24,7 +25,7 @@ KUNA_AUTH = json.loads(os.getenv("KUNA_AUTH", "{}"))
 
 def init_plot(y_range=(USD_LOW, USD_HIGH)):
     tools = "pan,wheel_zoom,xwheel_zoom,box_zoom,reset,save"
-    p = figure(x_axis_type="datetime", tools=tools, plot_width=1000, title="Arbitrage Controller", y_range=y_range)
+    p = figure(x_axis_type="datetime", tools=tools, plot_width=1200, title="Arbitrage Controller", y_range=y_range)
     p.ygrid.minor_grid_line_alpha = 0.2
     p.ygrid.minor_grid_line_color = 'gray'
     p.ygrid.grid_line_alpha = 0.4
@@ -48,6 +49,8 @@ def serve_frontend(doc):
     src_store = PandasReader(name="bitfinex_btcusd", columns=formats.history_format, time_unit="s", time_field="timestamp")
     tgt_store = PandasReader(name="kuna_btcuah", columns=formats.history_format, time_unit="s", x_shift_hours=0)
     ord_store = PandasReader(name="kuna_orderbook", columns=formats.orderbook_format, time_unit="s")
+
+    trader = PandasTrader(name="bitfinex_kuna_arbitrage_trades")
 
     src_df = src_store.read_latest(trunks=1)
     tgt_df = tgt_store.read_latest(trunks=1)
@@ -146,7 +149,7 @@ def serve_frontend(doc):
             plot.extra_y_ranges['UNITLESS'].callback = None
     fixate.on_click(lambda x: on_fix(fixate, x))
 
-    inputs = widgetbox(
+    analyzer_inputs = widgetbox(
         wgt_refresh,
         wgt_start_date, wgt_end_date,
         wgt_autoscale,
@@ -157,5 +160,51 @@ def serve_frontend(doc):
         fixate,
         console
     )
-    doc.add_root(row(inputs, plot, width=1500))
+
+    def live_trade():
+        console.text = "[{}] In callback\n".format(datetime.now())
+        console.text += "[{}] {}\n".format(datetime.now(), src_store._df.iloc[-1])
+
+    button_livetrade = Toggle(label='[Live Trade]', button_type='primary')
+    def on_trade_toggle(button, state):
+        console.text += "Changing live trading to: " + str(state) + "\n"
+        if state:
+            doc.add_periodic_callback(live_trade, 1000)
+        else:
+            doc.remove_periodic_callback(live_trade)
+
+    button_livetrade.on_click(lambda x: on_trade_toggle(button_livetrade, x))
+
+    text_publickey = TextInput(title="Public Key:", value=str(KUNA_AUTH.get('public_key')))
+    text_secretkey = TextInput(title="Secret Key:", value=str(KUNA_AUTH.get('secret_key')))
+
+    buy_all_button = Button(label='Buy All', button_type='success')
+    sell_all_button = Button(label='Sell All', button_type='danger')
+    cancel_all_button = Button(label='Cancel All', button_type='warning')
+
+    trader.add_trader_api(KunaIOTrader(text_publickey, text_secretkey))
+
+    def on_buy(button):
+        console.text = "[{}] Buy order placed for {}\n".format(datetime.now(), 1.1203)
+        console.text += json.dumps(trader.buy_all(), indent=2) + "\n"
+    buy_all_button.on_click(lambda: on_buy(buy_all_button))
+    def on_sell(button):
+        console.text = "[{}] Sell order placed for {}\n".format(datetime.now(), 1.1203)
+        console.text += json.dumps(trader.sell_all(), indent=2) + "\n"
+    sell_all_button.on_click(lambda: on_sell(sell_all_button))
+    def on_cancel(button):
+        console.text = "[{}] Cancelled orders\n".format(datetime.now())
+        console.text += json.dumps(trader.cancel_all(), indent=2) + "\n"
+    cancel_all_button.on_click(lambda: on_cancel(cancel_all_button))
+
+    trader_inputs = widgetbox(
+        button_livetrade,
+        text_publickey,
+        text_secretkey,
+        buy_all_button,
+        sell_all_button,
+        cancel_all_button
+    )
+
+    doc.add_root(row(analyzer_inputs, trader_inputs, plot, width=1850))
     doc.title = "Arbitrage Controller"

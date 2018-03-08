@@ -1,10 +1,10 @@
 import pandas as pd
 from time import sleep
 
-from constants import currencies, periods, remote
+from constants import currencies
 from sources.historical import CryptowatchSource, KunaIoSource
 from parsers.rates import orderbook_to_record
-from persistence.postgre import TimeSeriesStore
+from models.timeseries import TimeSeriesStore
 from constants import formats
 from datetime import timedelta
 

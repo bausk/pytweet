@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import dateutil.parser
 from psycopg2.extras import Json
 import pandas as pd
-from .postgre import TimeSeriesStore
+from models.timeseries import TimeSeriesStore
 from objects.dataframes import create_empty_dataframe
 
 class PandasReader(TimeSeriesStore):
