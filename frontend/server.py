@@ -60,7 +60,7 @@ def serve_frontend(doc):
     ord_df = ord_store.read_latest(trunks=1)
     source_src = ColumnDataSource(data=dict(Time=src_df.index, price=src_df.price))
     source_tgt = ColumnDataSource(data=dict(Time=tgt_df.index, price=tgt_df.price, volume=tgt_df['volume'].multiply(100)))
-    source_ord = ColumnDataSource(data=dict(Time=ord_df.index, ask=ord_df.ask, bid=ord_df.bid))
+    source_ord = ColumnDataSource(data=dict(Time=ord_df.index, ask=ord_df.get('ask', []), bid=ord_df.get('bid', [])))
 
     plot = init_plot()
 
