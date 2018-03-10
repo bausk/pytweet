@@ -8,21 +8,36 @@ parse.uses_netloc.append("postgres")
 url = parse.urlparse(os.environ["DATABASE_URL"])
 
 
+def _reconnect():
+    return psycopg2.connect(
+        database=url.path[1:],
+        user=url.username,
+        password=url.password,
+        host=url.hostname,
+        port=url.port
+    )
+
+_GLOBAL_CONNECTION = _reconnect()
+
 class BaseSQLStore:
     def __init__(self, name, format=None):
+        global _GLOBAL_CONNECTION
         if format is None:
             format = datastore_records
-        self._connection = self._reconnect()
+        self._connection  = _GLOBAL_CONNECTION
         self.name = name
         self._table_connected = False
         self._table_format = format
         self._username = url.username
 
     def _ensure_connection(self, ensure_table=False):
+        global _GLOBAL_CONNECTION
         try:
             self._connection.isolation_level
         except BaseException:
-            self._connection = self._reconnect()
+            self._connection.close()
+            _GLOBAL_CONNECTION = _reconnect()
+            self._connection = _GLOBAL_CONNECTION
 
         if ensure_table:
             if not self._table_connected:
@@ -75,14 +90,3 @@ class BaseSQLStore:
 
         self._table_connected = True
         return True
-
-    @staticmethod
-    def _reconnect():
-        return psycopg2.connect(
-            database=url.path[1:],
-            user=url.username,
-            password=url.password,
-            host=url.hostname,
-            port=url.port
-        )
-

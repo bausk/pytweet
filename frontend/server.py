@@ -45,7 +45,7 @@ def init_plot(y_range=(USD_LOW, USD_HIGH)):
 
 def serve_frontend(doc):
 
-    #statuses = StatusStore("statuses_store")
+    statuses = StatusStore("statuses_store")
 
     console = PreText(text="#>\n", width=500, height=100)
 
@@ -174,15 +174,15 @@ def serve_frontend(doc):
 
     button_livetrade = Toggle(label='[Live Trade]', button_type='primary')
     def on_trade_toggle(button, state):
-        #statuses.set_value("SCRIPT_IS_LIVE", state)
+        statuses.set_value("SCRIPT_IS_LIVE", state)
         console.text += "Changing live trading to: " + str(state) + "\n"
         if state:
             doc.add_periodic_callback(live_trade, 2000)
         else:
             doc.remove_periodic_callback(live_trade)
     button_livetrade.on_click(lambda x: on_trade_toggle(button_livetrade, x))
-    #if statuses.get_value("SCRIPT_IS_LIVE"):
-        #button_livetrade.active = True
+    if statuses.get_value("SCRIPT_IS_LIVE"):
+        button_livetrade.active = True
 
 
     text_publickey = TextInput(title="Public Key:", value=str(KUNA_AUTH.get('public_key')))
