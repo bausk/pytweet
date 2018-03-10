@@ -2,6 +2,7 @@ import hmac
 import hashlib
 import requests
 from collections import OrderedDict
+from math import floor
 
 from persistence.postgre import BaseSQLStore
 from constants.formats import trading_records
@@ -16,13 +17,39 @@ class PandasTrader(BaseSQLStore):
     def add_trader_api(self, api):
         self._api: KunaIOTrader = api
 
-    def buy_all(self, minimum=10.0, maximum=50000.0):
+    def buy_all(self, minimum=20.0, maximum=50000.0):
         conn = self._ensure_connection(ensure_table=True)
-        return self._api.status()
+        # 1. Figure out how much we can try to buy
+        status = self._api.status()
+        if status is None:
+            return False
+        account = next(x for x in status['accounts'] if x['currency'] == 'uah')
+        amount_available = floor(float(account['balance']))
+        if amount_available < minimum:
+            return False
+        if amount_available > maximum:
+            amount_available = maximum
+        current_rate = float(min([x['price'] for x in self._api.latest_orderbook()['asks']]))
+        amount_in_btc = floor((amount_available / current_rate) * 1000000) / 1000000
+        order = self._api.order('buy', current_rate, amount_in_btc)
+        return order
 
-    def sell_all(self, minimum=0.000001, maximum=0.2):
+    def sell_all(self, minimum=0.000002, maximum=1):
         conn = self._ensure_connection(ensure_table=True)
-        return self._api.status()
+        # 1. Figure out how much we can try to buy
+        status = self._api.status()
+        if status is None:
+            return False
+        account = next(x for x in status['accounts'] if x['currency'] == 'btc')
+        amount_available = floor(float(account['balance']) * 1000000) / 1000000
+        if amount_available < minimum:
+            return False
+        if amount_available > maximum:
+            amount_available = maximum
+        current_rate = float(max([x['price'] for x in self._api.latest_orderbook()['bids']]))
+        amount_in_btc = amount_available
+        order = self._api.order('sell', current_rate, amount_in_btc)
+        return order
 
     def cancel_all(self):
         conn = self._ensure_connection(ensure_table=True)
@@ -44,7 +71,8 @@ class KunaIOTrader(object):
             userinfo_url="/api/v2/members/me",
             orders_url="/api/v2/orders",
             trade_url="/api/v2/orders",
-            delete_url="/api/v2/order/delete"
+            delete_url="/api/v2/order/delete",
+            orderbook_url="/api/v2/order_book",
         )
 
     def status(self):
@@ -59,7 +87,21 @@ class KunaIOTrader(object):
     def delete(self, ident):
         params = dict(id=ident)
         res = self._post(self._urls['delete_url'], params)
-        return res.json()
+        return self._check_error(res.json(), None)
+
+    def order(self, side, price, volume):
+        params = dict(
+            market='btcuah',
+            side=side,
+            price=price,
+            volume=volume
+        )
+        res = self._post(self._urls['trade_url'], params)
+        return self._check_error(res.json(), None)
+
+    def latest_orderbook(self):
+        params = dict(market='btcuah')
+        return requests.get(self._urls['base_url'] + self._urls['orderbook_url'], params=params).json()
 
     def _get_params(self):
         return dict(

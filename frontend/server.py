@@ -14,6 +14,7 @@ from analyzers.simple import BaseArbitrageAnalyzer
 from parsers.rates import get_rate
 from persistence.pandas import PandasReader
 from models.trader import PandasTrader, KunaIOTrader
+from models.status_store import StatusStore
 from constants import formats
 from constants.constants import MONITOR_CHART_NAMES as GLYPHNAMES
 
@@ -43,6 +44,8 @@ def init_plot(y_range=(USD_LOW, USD_HIGH)):
 
 
 def serve_frontend(doc):
+
+    statuses = StatusStore("statuses_store")
 
     console = PreText(text="#>\n", width=500, height=100)
 
@@ -162,18 +165,25 @@ def serve_frontend(doc):
     )
 
     def live_trade():
-        console.text = "[{}] In callback\n".format(datetime.now())
+        nonlocal src_df
+        src_df = src_store.read_latest(trunks=2)
+        ord_store.read_latest(trunks=2)
+        source_src.data = dict(Time=src_df.index, price=src_df.price)
+        console.text = "[{}] Performing live trading. Latest data:\n".format(datetime.now())
         console.text += "[{}] {}\n".format(datetime.now(), src_store._df.iloc[-1])
 
     button_livetrade = Toggle(label='[Live Trade]', button_type='primary')
     def on_trade_toggle(button, state):
+        statuses.set_value("SCRIPT_IS_LIVE", state)
         console.text += "Changing live trading to: " + str(state) + "\n"
         if state:
-            doc.add_periodic_callback(live_trade, 1000)
+            doc.add_periodic_callback(live_trade, 2000)
         else:
             doc.remove_periodic_callback(live_trade)
-
     button_livetrade.on_click(lambda x: on_trade_toggle(button_livetrade, x))
+    if statuses.get_value("SCRIPT_IS_LIVE"):
+        button_livetrade.active = True
+
 
     text_publickey = TextInput(title="Public Key:", value=str(KUNA_AUTH.get('public_key')))
     text_secretkey = TextInput(title="Secret Key:", value=str(KUNA_AUTH.get('secret_key')))
@@ -185,11 +195,11 @@ def serve_frontend(doc):
     trader.add_trader_api(KunaIOTrader(text_publickey, text_secretkey))
 
     def on_buy(button):
-        console.text = "[{}] Buy order placed for {}\n".format(datetime.now(), 1.1203)
+        console.text = "[{}] BUY order placed:\n".format(datetime.now())
         console.text += json.dumps(trader.buy_all(), indent=2) + "\n"
     buy_all_button.on_click(lambda: on_buy(buy_all_button))
     def on_sell(button):
-        console.text = "[{}] Sell order placed for {}\n".format(datetime.now(), 1.1203)
+        console.text = "[{}] SELL order placed for {}\n".format(datetime.now(), 1.1203)
         console.text += json.dumps(trader.sell_all(), indent=2) + "\n"
     sell_all_button.on_click(lambda: on_sell(sell_all_button))
     def on_cancel(button):

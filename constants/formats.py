@@ -16,3 +16,11 @@ trading_records = dict(
     price="real NOT NULL",
     volume="double precision NOT NULL"
 )
+
+status_records = dict(
+    id="bigserial NOT NULL",
+    created_at="timestamp with time zone",
+    name="varchar(128) UNIQUE NOT NULL",
+    value="boolean",
+    multivalue="jsonb"
+)
