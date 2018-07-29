@@ -36,7 +36,8 @@ class TimeSeriesStore(BaseSQLStore):
         ]
 
     def write(self, data):
-        df = self._prepare_data(data)
+        self._ensure_cache()
+        df = self._prepare_data(data).truncate(before=self._trunk_opened_datetime)
         self._update_cache(df)
 
     def _get_initial_store(self):
@@ -111,7 +112,6 @@ class TimeSeriesStore(BaseSQLStore):
         df.set_index('Time', inplace=True)
         del data, columns
         df.sort_index(inplace=True)
-        df = df.truncate(before=self._trunk_opened_datetime)
         return df
 
     def _update_cache(self, df):

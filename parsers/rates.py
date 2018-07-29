@@ -56,3 +56,6 @@ def orderbook_to_record(orderbook, coeff=1.0):
     except BaseException as e:
         print(e)
         return res
+
+def orderbook_to_series(orderbook):
+    return pd.Series(orderbook_to_record(orderbook))

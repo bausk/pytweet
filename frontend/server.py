@@ -10,7 +10,8 @@ from bokeh.plotting import figure
 from bokeh.palettes import Spectral4
 
 from analyzers.simple import BaseArbitrageAnalyzer
-
+from constants import currencies
+from sources.historical import CryptowatchSource, KunaIoSource
 from parsers.rates import get_rate
 from persistence.pandas import PandasReader
 from models.trader import PandasTrader, KunaIOTrader
@@ -164,6 +165,17 @@ def serve_frontend(doc):
         console
     )
 
+    text_publickey = TextInput(title="Public Key:", value=str(KUNA_AUTH.get('public_key')))
+    text_secretkey = TextInput(title="Secret Key:", value=str(KUNA_AUTH.get('secret_key')))
+    trader.add_trader_api(KunaIOTrader(text_publickey, text_secretkey))
+
+    trader.add_source_api(CryptowatchSource(currency=currencies.BTC))
+    trader.add_source_api(KunaIoSource(currency=currencies.BTC))
+
+    buy_all_button = Button(label='Buy All', button_type='success')
+    sell_all_button = Button(label='Sell All', button_type='danger')
+    cancel_all_button = Button(label='Cancel All', button_type='warning')
+
     def live_trade():
         nonlocal src_df
         src_df = src_store.read_latest(trunks=2)
@@ -177,22 +189,12 @@ def serve_frontend(doc):
         statuses.set_value("SCRIPT_IS_LIVE", state)
         console.text += "Changing live trading to: " + str(state) + "\n"
         if state:
-            doc.add_periodic_callback(live_trade, 2000)
+            doc.add_periodic_callback(live_trade, 1000)
         else:
             doc.remove_periodic_callback(live_trade)
     button_livetrade.on_click(lambda x: on_trade_toggle(button_livetrade, x))
     if statuses.get_value("SCRIPT_IS_LIVE"):
         button_livetrade.active = True
-
-
-    text_publickey = TextInput(title="Public Key:", value=str(KUNA_AUTH.get('public_key')))
-    text_secretkey = TextInput(title="Secret Key:", value=str(KUNA_AUTH.get('secret_key')))
-
-    buy_all_button = Button(label='Buy All', button_type='success')
-    sell_all_button = Button(label='Sell All', button_type='danger')
-    cancel_all_button = Button(label='Cancel All', button_type='warning')
-
-    trader.add_trader_api(KunaIOTrader(text_publickey, text_secretkey))
 
     def on_buy(button):
         console.text = "[{}] BUY order placed:\n".format(datetime.now())
