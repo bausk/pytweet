@@ -1,16 +1,12 @@
-import hmac
-import hashlib
-import requests
-from urllib.parse import urlencode
-from datetime import datetime
-from collections import OrderedDict
 from math import floor
 
-from constants.formats import trading_records, history_format, orderbook_format
+from constants.formats import trading_records
+from models.exchange import BaseExchangeInterface
 from persistence.postgre import BaseSQLStore
 from parsers.rates import orderbook_to_series
 
-class PandasTrader(BaseSQLStore):
+
+class LiveTrader(BaseSQLStore):
 
     def __init__(self, name):
         super().__init__(name, format=trading_records)
@@ -20,7 +16,7 @@ class PandasTrader(BaseSQLStore):
         self._source_store = None
 
     def add_trader_api(self, api):
-        self._trade_api: KunaIOTrader = api
+        self._trade_api: BaseExchangeInterface = api
 
     def add_source_api(self, api):
         self._source_api = api
@@ -28,13 +24,25 @@ class PandasTrader(BaseSQLStore):
     def add_target_api(self, api):
         self._target_api = api
 
+    def signal_callback(self, *args, **kwargs):
+        data1 = self._source_api.fetch_latest_trades(limit=100)
+        data2 = self._target_api.fetch_latest_trades()
+        # Now convert them to dataframes and apply algorithm from analyzer
+        src_df = src_store.read_latest(trunks=2)
+        ord_store.read_latest(trunks=2)
+        source_src.data = dict(Time=src_df.index, price=src_df.price)
+        console.text = "[{}] Performing live trading. Latest data:\n".format(datetime.now())
+        console.text += "[{}] {}\n".format(datetime.now(), src_store._df.iloc[-1])
+        # Task for tomorrow:
+        # Figure out how simulator works. Implement same logic here in live trade or in another file.
+        # Task: make dataframe retrieval fully DB-independent
+
     def check_status(self):
         # Need 2 dataframes here, same as in analyzer
         self._source_store.write(self._source_api.fetch_latest_trades(limit=50))
         orderbook = orderbook_to_series(self._target_api.fetch_order_book())
         if orderbook.get('timestamp') is not None:
             self._target_store.write(orderbook)
-
 
     def buy_all(self, minimum=20.0, maximum=50000.0):
         conn = self._ensure_connection(ensure_table=True)
@@ -78,86 +86,3 @@ class PandasTrader(BaseSQLStore):
         for order in orders:
             res = self._trade_api.delete(order['id'])
         return self._trade_api.status()
-
-
-class KunaIOTrader(object):
-    def __init__(self, public, secret):
-        self._public_key_input = public
-        self._secret_key_input = secret
-        self._base_uri = "https://kuna.io"
-        self._urls = dict(
-            base_url="https://kuna.io",
-            userinfo_url="/api/v2/members/me",
-            orders_url="/api/v2/orders",
-            trade_url="/api/v2/orders",
-            delete_url="/api/v2/order/delete",
-            orderbook_url="/api/v2/order_book",
-        )
-
-    def status(self):
-        res = self._get(self._urls['userinfo_url'])
-        return self._check_error(res.json(), None)
-
-    def orders(self):
-        params = dict(market='btcuah')
-        res = self._get(self._urls['orders_url'], params)
-        return self._check_error(res.json(), [])
-
-    def delete(self, ident):
-        params = dict(id=ident)
-        res = self._post(self._urls['delete_url'], params)
-        return self._check_error(res.json(), None)
-
-    def order(self, side, price, volume):
-        params = dict(
-            market='btcuah',
-            side=side,
-            price=price,
-            volume=volume
-        )
-        res = self._post(self._urls['trade_url'], params)
-        return self._check_error(res.json(), None)
-
-    def latest_orderbook(self):
-        params = dict(market='btcuah')
-        return requests.get(self._urls['base_url'] + self._urls['orderbook_url'], params=params).json()
-
-    def _get_params(self):
-        return dict(
-            access_key = str(self._public_key_input.value),
-            tonce=self._tonce()
-        )
-
-    def _sign(self, verb, uri, params=""):
-        message = "{verb}|{uri}|{params}".format(verb=verb, uri=uri, params=params)
-        key = self._secret_key_input.value
-        h = hmac.new(key.encode(), message.encode(), hashlib.sha256)
-        return h.hexdigest()
-
-    def _post(self, uri, params=None):
-        if params is None:
-            params = {}
-        params.update(self._get_params())
-        params = OrderedDict(sorted(params.items()))
-        enc_params = urlencode(params)
-        signature = self._sign("POST", uri, enc_params)
-        prepared_params = dict(**params, signature=signature)
-        return requests.post(self._urls['base_url'] + uri, params=prepared_params)
-
-    def _get(self, uri, params=None):
-        if params is None:
-            params = {}
-        params.update(self._get_params())
-        params = OrderedDict(sorted(params.items()))
-        enc_params = urlencode(params)
-        signature = self._sign("GET", uri, enc_params)
-        prepared_params = dict(**params, signature=signature)
-        return requests.get(self._urls['base_url'] + uri, params=prepared_params)
-
-    def _check_error(self, response, default_value=None):
-        if 'error' in response:
-            return default_value
-        return response
-
-    def _tonce(self):
-        return int(round(datetime.now().timestamp() * 1000))

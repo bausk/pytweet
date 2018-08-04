@@ -14,7 +14,8 @@ from constants import currencies
 from sources.historical import CryptowatchSource, KunaIoSource
 from parsers.rates import get_rate
 from persistence.pandas import PandasReader
-from models.trader import PandasTrader, KunaIOTrader
+from models.trader import LiveTrader
+from implementations.kuna import KunaExchange
 from models.status_store import StatusStore
 from constants import formats
 from constants.constants import MONITOR_CHART_NAMES as GLYPHNAMES
@@ -54,7 +55,7 @@ def serve_frontend(doc):
     tgt_store = PandasReader(name="kuna_btcuah", columns=formats.history_format, time_unit="s", x_shift_hours=0)
     ord_store = PandasReader(name="kuna_orderbook", columns=formats.orderbook_format, time_unit="s")
 
-    trader = PandasTrader(name="bitfinex_kuna_arbitrage_trades")
+    trader = LiveTrader(name="bitfinex_kuna_arbitrage_trades")
 
     src_df = src_store.read_latest(trunks=1)
     tgt_df = tgt_store.read_latest(trunks=1)
@@ -130,7 +131,6 @@ def serve_frontend(doc):
         console=console
     )
     def on_analyze(button):
-        print(button)
         _, src_df, ord_df = analyzer.analyze()
         source_ord.data = dict(Time=ord_df.index, ask=ord_df.ask, bid=ord_df.bid)
         source_src.data = dict(Time=src_df.index, price=src_df.price)
@@ -167,31 +167,24 @@ def serve_frontend(doc):
 
     text_publickey = TextInput(title="Public Key:", value=str(KUNA_AUTH.get('public_key')))
     text_secretkey = TextInput(title="Secret Key:", value=str(KUNA_AUTH.get('secret_key')))
-    trader.add_trader_api(KunaIOTrader(text_publickey, text_secretkey))
 
+    trader.add_trader_api(KunaExchange(text_publickey, text_secretkey))
     trader.add_source_api(CryptowatchSource(currency=currencies.BTC))
-    trader.add_source_api(KunaIoSource(currency=currencies.BTC))
+    trader.add_target_api(KunaIoSource(currency=currencies.BTC))
+    trader.add_algorithm(Arbitrage())
 
     buy_all_button = Button(label='Buy All', button_type='success')
     sell_all_button = Button(label='Sell All', button_type='danger')
     cancel_all_button = Button(label='Cancel All', button_type='warning')
-
-    def live_trade():
-        nonlocal src_df
-        src_df = src_store.read_latest(trunks=2)
-        ord_store.read_latest(trunks=2)
-        source_src.data = dict(Time=src_df.index, price=src_df.price)
-        console.text = "[{}] Performing live trading. Latest data:\n".format(datetime.now())
-        console.text += "[{}] {}\n".format(datetime.now(), src_store._df.iloc[-1])
 
     button_livetrade = Toggle(label='[Live Trade]', button_type='primary')
     def on_trade_toggle(button, state):
         statuses.set_value("SCRIPT_IS_LIVE", state)
         console.text += "Changing live trading to: " + str(state) + "\n"
         if state:
-            doc.add_periodic_callback(live_trade, 1000)
+            doc.add_periodic_callback(trader.signal_callback, 5000)
         else:
-            doc.remove_periodic_callback(live_trade)
+            doc.remove_periodic_callback(trader.signal_callback)
     button_livetrade.on_click(lambda x: on_trade_toggle(button_livetrade, x))
     if statuses.get_value("SCRIPT_IS_LIVE"):
         button_livetrade.active = True

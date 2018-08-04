@@ -5,6 +5,7 @@ import pandas as pd
 from models.timeseries import TimeSeriesStore
 from objects.dataframes import create_empty_dataframe
 
+
 class PandasReader(TimeSeriesStore):
 
     def __init__(self, name, columns, **kw):

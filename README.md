@@ -33,5 +33,3 @@ Heroku deployment is served via `./run.sh` script.
 
 `python standalone.py`
 
-
-## Develop
