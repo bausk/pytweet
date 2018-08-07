@@ -17,14 +17,18 @@ def _reconnect():
         port=url.port
     )
 
+
 _GLOBAL_CONNECTION = _reconnect()
 
+
 class BaseSQLStore:
+    _columns = []
+
     def __init__(self, name, format=None):
         global _GLOBAL_CONNECTION
         if format is None:
             format = datastore_records
-        self._connection  = _GLOBAL_CONNECTION
+        self._connection = _GLOBAL_CONNECTION
         self.name = name
         self._table_connected = False
         self._table_format = format

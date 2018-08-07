@@ -1,19 +1,39 @@
 from math import floor
+from datetime import datetime, timedelta
+import pandas as pd
 
-from constants.formats import trading_records
+from models.algorithm import BaseAlgorithm
 from models.exchange import BaseExchangeInterface
-from persistence.postgre import BaseSQLStore
+from persistence.simple_store import InMemoryStore
+from persistence.mixins import PrepareDataMixin, WithConsole
 from parsers.rates import orderbook_to_series
+from constants.formats import orderbook_format
+from constants.constants import DECISIONS
 
 
-class LiveTrader(BaseSQLStore):
+class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
+    current_status = None
+    trade_history = []
 
-    def __init__(self, name):
-        super().__init__(name, format=trading_records)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._trade_api = None
         self._source_api = None
         self._target_api = None
-        self._source_store = None
+        self._algorithm: BaseAlgorithm = None
+        self._source_df = None
+        self._orderbook = None
+        self._target_trades = None
+        self._cutoff = timedelta(minutes=1)
+
+    def _get_cutoff(self):
+        if self._algorithm is not None and getattr(self._algorithm, 'cutaway', None):
+            return self._algorithm.cutaway
+        else:
+            return self._cutoff
+
+    def get_rate(self):
+        return self._algorithm.rate.seconds
 
     def add_trader_api(self, api):
         self._trade_api: BaseExchangeInterface = api
@@ -24,28 +44,39 @@ class LiveTrader(BaseSQLStore):
     def add_target_api(self, api):
         self._target_api = api
 
-    def signal_callback(self, *args, **kwargs):
-        data1 = self._source_api.fetch_latest_trades(limit=100)
-        data2 = self._target_api.fetch_latest_trades()
-        # Now convert them to dataframes and apply algorithm from analyzer
-        src_df = src_store.read_latest(trunks=2)
-        ord_store.read_latest(trunks=2)
-        source_src.data = dict(Time=src_df.index, price=src_df.price)
-        console.text = "[{}] Performing live trading. Latest data:\n".format(datetime.now())
-        console.text += "[{}] {}\n".format(datetime.now(), src_store._df.iloc[-1])
-        # Task for tomorrow:
-        # Figure out how simulator works. Implement same logic here in live trade or in another file.
-        # Task: make dataframe retrieval fully DB-independent
+    def add_algorithm(self, algorithm):
+        self._algorithm = algorithm
 
-    def check_status(self):
-        # Need 2 dataframes here, same as in analyzer
-        self._source_store.write(self._source_api.fetch_latest_trades(limit=50))
-        orderbook = orderbook_to_series(self._target_api.fetch_order_book())
-        if orderbook.get('timestamp') is not None:
-            self._target_store.write(orderbook)
+    def signal_callback(self, *args, **kwargs):
+        current_time = datetime.now()
+        cutoff_delta = self._get_cutoff().seconds
+        cutoff_timestamp = int(current_time.timestamp()) - cutoff_delta
+
+        raw_source_data = self._source_api.fetch_latest_trades(limit=100)
+        source_df = self._prepare_data(raw_source_data)
+        self._source_df = pd.concat([self._source_df, source_df]).drop_duplicates(subset='timestamp')
+        self._source_df.drop(source_df.index[source_df['timestamp'] < cutoff_timestamp], inplace=True)
+
+        raw_orderbook = orderbook_to_series(self._target_api.fetch_order_book())
+        orderbook = self._prepare_data(
+            raw_orderbook,
+            {'time_field': 'timestamp', 'columns': orderbook_format, 'time_unit': 's'}
+        )
+        self._orderbook = pd.concat([self._orderbook, orderbook]).drop_duplicates(subset='timestamp')
+        self._orderbook.drop(orderbook.index[orderbook['timestamp'] < cutoff_timestamp], inplace=True)
+
+        # Apply algorithm from analyzer
+        signal_object = self._algorithm.signal(self._source_df, self._orderbook)
+
+        self.log("[{}] {}/{} from {}/{} measurements".format(
+            current_time,
+            signal_object['buy'],
+            signal_object['sell'],
+            len(self._orderbook),
+            len(self._source_df)
+        ))
 
     def buy_all(self, minimum=20.0, maximum=50000.0):
-        conn = self._ensure_connection(ensure_table=True)
         # 1. Figure out how much we can try to buy
         status = self._trade_api.status()
         if status is None:
@@ -62,7 +93,6 @@ class LiveTrader(BaseSQLStore):
         return order
 
     def sell_all(self, minimum=0.000002, maximum=1):
-        conn = self._ensure_connection(ensure_table=True)
         # 1. Figure out how much we can try to buy
         status = self._trade_api.status()
         if status is None:
@@ -79,7 +109,6 @@ class LiveTrader(BaseSQLStore):
         return order
 
     def cancel_all(self):
-        conn = self._ensure_connection(ensure_table=True)
         # 1. get orders.
         # 2. cancel each order.
         orders = self._trade_api.orders()
