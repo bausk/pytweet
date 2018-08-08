@@ -28,7 +28,7 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
         self._source_df = None
         self._orderbook = None
         self._target_trades = None
-        self._cutoff = timedelta(minutes=1)
+        self._cutoff = timedelta(hours=8)
 
     def _get_cutoff(self):
         if self._algorithm is not None and getattr(self._algorithm, 'cutaway', None):

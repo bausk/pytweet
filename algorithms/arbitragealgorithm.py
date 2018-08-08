@@ -17,7 +17,7 @@ class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
     bars_shift: int = 10
 
     def _data_ok(self, source_df, order_book):
-        if len(order_book) < 10:
+        if len(order_book) < 20:
             return False
         return True
 
@@ -63,12 +63,23 @@ class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
         sell_indicator.loc[sell_indicator > -0.8] = 0
         weighted_sell_indicator = sell_indicator.rolling('180s').sum()
         self.log("[info] Calculated indicators")
+        if len(weighted_arbitrage_indicator) == 0 or len(weighted_sell_indicator) == 0:
+            return Signal(**{
+                'buy': 0.0,
+                'sell': 0.0,
+                'buy_datetime': current_datetime,
+                'sell_datetime': current_datetime,
+                'decision': DECISIONS.NO_DATA
+            })
         return Signal(**{
             'buy': weighted_arbitrage_indicator.iloc[-1],
             'sell': weighted_sell_indicator.iloc[-1],
             'buy_datetime': weighted_arbitrage_indicator.index[-1],
             'sell_datetime': weighted_sell_indicator.index[-1],
-            'decision': self._decide(weighted_arbitrage_indicator, weighted_sell_indicator)
+            'decision': self._decide(
+                weighted_arbitrage_indicator.iloc[-1].item(),
+                weighted_sell_indicator.iloc[-1].item()
+            )
         })
 
     def _decide(self, buy, sell):
