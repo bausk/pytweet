@@ -199,7 +199,7 @@ def serve_frontend(doc):
     cancel_all_button = Button(label='Cancel All', button_type='warning')
 
     button_livetrade = Toggle(label='[Live Trade]', button_type='primary')
-    algo_cycle_rate = trader.get_rate()
+    algo_cycle_rate = trader.get_rate() * 1000
 
     def on_trade_toggle(button, state):
         statuses.set_value("SCRIPT_IS_LIVE", state)

@@ -4,6 +4,8 @@ import pandas as pd
 
 from models.algorithm import BaseAlgorithm
 from models.exchange import BaseExchangeInterface
+from models.trade import Trade
+from models.signal import Signal
 from persistence.simple_store import InMemoryStore
 from persistence.mixins import PrepareDataMixin, WithConsole
 from parsers.rates import orderbook_to_series
@@ -12,8 +14,10 @@ from constants.constants import DECISIONS
 
 
 class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
-    current_status = None
+    current_status = DECISIONS.NO_DATA
+    current_trade = None
     trade_history = []
+    current_equity = 250
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -66,15 +70,49 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
         self._orderbook.drop(orderbook.index[orderbook['timestamp'] < cutoff_timestamp], inplace=True)
 
         # Apply algorithm from analyzer
-        signal_object = self._algorithm.signal(self._source_df, self._orderbook)
-
+        signal_object: Signal = self._algorithm.signal(self._source_df, self._orderbook)
         self.log("[{}] {}/{} from {}/{} measurements".format(
             current_time,
-            signal_object['buy'],
-            signal_object['sell'],
+            signal_object.buy,
+            signal_object.sell,
             len(self._orderbook),
             len(self._source_df)
         ))
+        return self._execute_signal(signal_object)
+
+    def _execute_signal(self, signal: Signal):
+        """
+        State machine to move around the trader current deal from inactive to active and back
+        :param signal:
+        :return:
+        """
+        current_market = self._orderbook.dropna(subset=['timestamp']).iloc[-1]
+        bid = current_market['bid'].item()
+        ask = current_market['ask'].item()
+        if signal.decision == DECISIONS.BUY_ALL and self.current_status == DECISIONS.NO_DATA:
+            # perform trade
+            self.current_trade = Trade(
+                open=datetime.now(),
+                close=None,
+                volume=self.current_equity / ask,
+                profit=None,
+                open_price=ask,
+                close_price=None
+            )
+            self.current_status = DECISIONS.BUY_ALL
+        if signal.decision == DECISIONS.SELL_ALL and self.current_status == DECISIONS.BUY_ALL:
+            profit = self.current_trade.volume * (bid - 1.005 * self.current_trade.open_price)
+            closed_trade = Trade(
+                open=self.current_trade.open,
+                close=datetime.now(),
+                volume=self.current_trade.volume,
+                profit=profit,
+                open_price=self.current_trade.open_price,
+                close_price=bid
+            )
+            self.current_equity += profit
+            self.current_status = DECISIONS.NO_DATA
+            self.trade_history.append(closed_trade)
 
     def buy_all(self, minimum=20.0, maximum=50000.0):
         # 1. Figure out how much we can try to buy

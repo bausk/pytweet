@@ -2,6 +2,7 @@ from datetime import timedelta, datetime
 
 from constants.constants import DECISIONS
 from models.algorithm import BaseAlgorithm
+from models.signal import Signal
 from persistence.mixins import WithConsole
 
 
@@ -25,13 +26,13 @@ class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
         current_datetime = datetime.now()
 
         if not self._data_ok(source_df, order_book):
-            return {
+            return Signal(**{
                 'buy': 0.0,
                 'sell': 0.0,
                 'buy_datetime': current_datetime,
                 'sell_datetime': current_datetime,
                 'decision': DECISIONS.NO_DATA
-            }
+            })
 
         src_df = source_df.resample(self.step).mean().interpolate()
         ord_df = order_book.resample(self.step).mean().interpolate()
@@ -62,13 +63,13 @@ class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
         sell_indicator.loc[sell_indicator > -0.8] = 0
         weighted_sell_indicator = sell_indicator.rolling('180s').sum()
         self.log("[info] Calculated indicators")
-        return {
+        return Signal(**{
             'buy': weighted_arbitrage_indicator.iloc[-1],
             'sell': weighted_sell_indicator.iloc[-1],
             'buy_datetime': weighted_arbitrage_indicator.index[-1],
             'sell_datetime': weighted_sell_indicator.index[-1],
             'decision': self._decide(weighted_arbitrage_indicator, weighted_sell_indicator)
-        }
+        })
 
     def _decide(self, buy, sell):
         result = DECISIONS.AMBIGUOUS
@@ -78,44 +79,3 @@ class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
             # Sell signal takes priority over buy signal, better bail out of risky position
             result = DECISIONS.SELL_ALL
         return result
-
-    def _calculate_profit(self, weighted_arbitrage_indicator, weighted_sell_indicator, ord_df):
-        buy_condition = (weighted_arbitrage_indicator > self.buy_threshold) & (
-                weighted_arbitrage_indicator.shift(1) <= self.buy_threshold)
-        sell_condition = (weighted_sell_indicator < self.sell_threshold) & (
-                weighted_sell_indicator.shift(1) >= self.sell_threshold)
-
-        buy_condition.name = "buy"
-        sell_condition.name = "sell"
-        combined = pd.concat([ord_df, buy_condition, sell_condition], axis=1)
-        deals = []
-        new_deal = {
-            'status': None,
-            'buytime': None,
-            'selltime': None,
-            'buyprice': None,
-            'sellprice': None,
-            'profit': 0.0
-        }
-        current_deal = {}
-        current_deal.update(new_deal)
-        for idx, row in combined.iterrows():
-            buy = row.buy
-            sell = row.sell
-            if buy and current_deal['status'] is None:
-                # Open the deal
-                current_deal['status'] = True
-                current_deal['buytime'] = idx
-                current_deal['buyprice'] = row.ask
-            if sell and current_deal['status'] is not None:
-                # Close the deal and wipe current
-                current_deal['selltime'] = idx
-                current_deal['sellprice'] = row.bid
-                current_deal['profit'] = (current_deal['sellprice'] - current_deal['buyprice'] - current_deal[
-                    'buyprice'] * 0.005) / current_deal['buyprice'] * 100
-                # self._console.text += str(current_deal['profit']) + "%\n"
-                deals.append(current_deal)
-                current_deal = {}
-                current_deal.update(new_deal)
-
-        return deals
