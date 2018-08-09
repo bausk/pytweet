@@ -9,8 +9,9 @@ from models.signal import Signal
 from persistence.simple_store import InMemoryStore
 from persistence.mixins import PrepareDataMixin, WithConsole
 from parsers.rates import orderbook_to_series
-from constants.formats import orderbook_format
+from constants.formats import orderbook_format, signal_format
 from constants.constants import DECISIONS
+from logger.hdf_logger import hdf_log
 
 
 class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
@@ -25,20 +26,20 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
         self._target_api = None
         self.trade_history = []
         self.signal_history = []
-        self._algorithm: BaseAlgorithm = None
+        self.algorithm: BaseAlgorithm = None
         self._source_df = None
         self._orderbook = None
         self._target_trades = None
         self._cutoff = timedelta(hours=8)
 
     def _get_cutoff(self):
-        if self._algorithm is not None and getattr(self._algorithm, 'cutaway', None):
-            return self._algorithm.cutaway
+        if self.algorithm is not None and getattr(self.algorithm, 'cutaway', None):
+            return self.algorithm.cutaway
         else:
             return self._cutoff
 
     def get_rate(self):
-        return self._algorithm.rate.seconds
+        return self.algorithm.rate.seconds
 
     def add_trader_api(self, api):
         self._trade_api: BaseExchangeInterface = api
@@ -50,9 +51,9 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
         self._target_api = api
 
     def add_algorithm(self, algorithm):
-        self._algorithm = algorithm
+        self.algorithm = algorithm
 
-    @hdf_log('signal.hdf', 'signal_history')
+    @hdf_log('signal.csv', 'signal_history')
     def signal_callback(self, *args, **kwargs):
         current_time = datetime.now()
         cutoff_delta = self._get_cutoff().seconds
@@ -72,7 +73,7 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
         self._orderbook.drop(orderbook.index[orderbook['timestamp'] < cutoff_timestamp], inplace=True)
 
         # Apply algorithm from analyzer
-        signal_object: Signal = self._algorithm.signal(self._source_df, self._orderbook)
+        signal_object: Signal = self.algorithm.signal(self._source_df, self._orderbook)
         self.log("[{}] {}/{} from {}/{} measurements".format(
             current_time,
             signal_object.buy,

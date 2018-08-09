@@ -110,3 +110,5 @@ credentials.cmd
 *.html
 *.pkl
 stdout.txt
+
+*.csv

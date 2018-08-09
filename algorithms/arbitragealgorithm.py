@@ -7,7 +7,7 @@ from persistence.mixins import WithConsole
 
 
 class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
-    rate: timedelta = timedelta(milliseconds=10000)
+    rate: timedelta = timedelta(milliseconds=1000)
     cutaway: timedelta = timedelta(minutes=20)
     step: str = '1T'
     rolling_window: str = '2h'
@@ -15,6 +15,10 @@ class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
     buy_threshold: int = 8
     sell_threshold: int = -5
     bars_shift: int = 10
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.latest_dataframe = None
 
     def _data_ok(self, source_df, order_book):
         if len(order_book) < 20:
@@ -62,6 +66,7 @@ class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
         sell_indicator = (sell_difference / normalized_ask_bid_distance).dropna()
         sell_indicator.loc[sell_indicator > -0.8] = 0
         weighted_sell_indicator = sell_indicator.rolling('180s').sum()
+        self.latest_dataframe = weighted_arbitrage_indicator
         self.log("[info] Calculated indicators")
         if len(weighted_arbitrage_indicator) == 0 or len(weighted_sell_indicator) == 0:
             return Signal(**{

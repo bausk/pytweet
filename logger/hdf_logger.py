@@ -6,7 +6,7 @@ import json
 import pandas as pd
 
 
-def hdf_log(filename='log.hdf', key=None):
+def hdf_log(filename='log.csv', key=None):
     store_path = os.path.dirname(os.path.realpath(sys.argv[0])) + "/" + filename
     if key is None:
         hashed = json.dumps(sys.argv) + json.dumps(store_path)
@@ -17,7 +17,7 @@ def hdf_log(filename='log.hdf', key=None):
         def wrapper(*args, **kwargs):
             rv = func(*args, **kwargs)
             try:
-                pd.DataFrame.from_records(rv).to_hdf(store_path, key)
+                pd.DataFrame.from_records(rv).to_csv(store_path)
             except Exception as e:
                 print('Error during logging:\n', str(e))
             return rv

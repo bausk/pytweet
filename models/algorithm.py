@@ -4,6 +4,5 @@ class BaseAlgorithm:
     rate: timedelta = timedelta(milliseconds=1000)
     cutaway: timedelta = timedelta(hours=1)
 
-    @staticmethod
-    def signal(*args, **kwargs):
-        return True
+    def signal(self, *args, **kwargs):
+        raise NotImplementedError('Implement self.signal if inheriting from BaseAlgorithm.')

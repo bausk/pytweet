@@ -1,9 +1,4 @@
 from collections import namedtuple
+from constants.formats import signal_format
 
-Signal = namedtuple('Signal', [
-    'buy',
-    'sell',
-    'buy_datetime',
-    'sell_datetime',
-    'decision'
-])
+Signal = namedtuple('Signal', signal_format)

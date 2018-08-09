@@ -3,9 +3,12 @@ import math
 import json
 from datetime import timedelta, datetime
 
-from bokeh.layouts import row, widgetbox
+import pandas as pd
+
+from bokeh.layouts import row, widgetbox, column
 from bokeh.models import ColumnDataSource, Range1d, LinearAxis, DatetimeTicker, CustomJS
-from bokeh.models.widgets import TextInput, Button, PreText, Toggle, DataTable
+from bokeh.models.widgets import TextInput, Button, PreText, Toggle, DataTable, TableColumn, DateFormatter, \
+    StringFormatter
 from bokeh.plotting import figure
 from bokeh.palettes import Spectral4
 
@@ -26,6 +29,16 @@ USD_LOW = 10000
 USD_HIGH = 12000
 
 KUNA_AUTH = json.loads(os.getenv("KUNA_AUTH", "{}"))
+
+
+def format_columns(columns):
+    rv = []
+    for x in columns:
+        if 'time' in x or 'date' in x:
+            rv.append(TableColumn(field=x, title=x, formatter=DateFormatter()))
+        else:
+            rv.append(TableColumn(field=x, title=x, formatter=StringFormatter()))
+    return rv
 
 
 def init_plot(y_range=(USD_LOW, USD_HIGH)):
@@ -199,6 +212,7 @@ def serve_frontend(doc):
     cancel_all_button = Button(label='Cancel All', button_type='warning')
 
     button_livetrade = Toggle(label='[Live Trade]', button_type='primary')
+    button_liveexecution = Toggle(label='☑ Execute', button_type='danger')
     algo_cycle_rate = trader.get_rate() * 1000
 
     def on_trade_toggle(button, state):
@@ -235,10 +249,34 @@ def serve_frontend(doc):
         button_livetrade,
         text_publickey,
         text_secretkey,
+        button_liveexecution,
         buy_all_button,
         sell_all_button,
         cancel_all_button
     )
 
-    doc.add_root(row(analyzer_inputs, trader_inputs, plot, width=1850))
+    table1_source = ColumnDataSource(data=pd.DataFrame(columns=formats.signal_format))
+    table1 = DataTable(source=table1_source, columns=format_columns(formats.signal_format))
+    table2_source = ColumnDataSource()
+    table2 = DataTable(source=table2_source, columns=format_columns(['indicator']))
+    # Data feed
+    execute_datafeed_button = Button(label='Load', button_type='primary')
+    lines_to_load = TextInput(title="No. of lines", value='50')
+
+    wide_formats = column(
+        plot,
+        row(execute_datafeed_button, lines_to_load),
+        table1,
+        table2
+    )
+
+    def on_update_tables(button):
+        count_to_load = int(lines_to_load.value)
+        data = pd.DataFrame.from_records(trader.signal_history).tail(count_to_load)
+        table1_source.stream(data.to_dict(orient='list'), rollover=500)
+        table2_source.stream(trader.algorithm.latest_dataframe.to_dict(orient='list'), rollover=500)
+
+    execute_datafeed_button.on_click(lambda: on_update_tables(execute_datafeed_button))
+
+    doc.add_root(row(analyzer_inputs, trader_inputs, wide_formats, width=1850))
     doc.title = "Arbitrage Controller"
