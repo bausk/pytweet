@@ -16,7 +16,6 @@ from constants.constants import DECISIONS
 class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
     current_status = DECISIONS.NO_DATA
     current_trade = None
-    trade_history = []
     current_equity = 250
 
     def __init__(self, *args, **kwargs):
@@ -24,6 +23,8 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
         self._trade_api = None
         self._source_api = None
         self._target_api = None
+        self.trade_history = []
+        self.signal_history = []
         self._algorithm: BaseAlgorithm = None
         self._source_df = None
         self._orderbook = None
@@ -51,6 +52,7 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
     def add_algorithm(self, algorithm):
         self._algorithm = algorithm
 
+    @hdf_log('signal.hdf', 'signal_history')
     def signal_callback(self, *args, **kwargs):
         current_time = datetime.now()
         cutoff_delta = self._get_cutoff().seconds
@@ -78,7 +80,12 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
             len(self._orderbook),
             len(self._source_df)
         ))
-        return self._execute_signal(signal_object)
+        result = self._execute_signal(signal_object)
+        historical_signal = signal_object._asdict()
+        historical_signal['result'] = result
+        historical_signal['logged_time'] = current_time
+        self.signal_history.append(historical_signal)
+        return self.signal_history
 
     def _execute_signal(self, signal: Signal):
         """
@@ -92,7 +99,7 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
         if signal.decision == DECISIONS.BUY_ALL and self.current_status == DECISIONS.NO_DATA:
             # perform trade
             self.current_trade = Trade(
-                open=datetime.now(),
+                open=datetime.utcnow(),
                 close=None,
                 volume=self.current_equity / ask,
                 profit=None,
@@ -100,11 +107,12 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
                 close_price=None
             )
             self.current_status = DECISIONS.BUY_ALL
+            return DECISIONS.BUY_ALL
         if signal.decision == DECISIONS.SELL_ALL and self.current_status == DECISIONS.BUY_ALL:
             profit = self.current_trade.volume * (bid - 1.005 * self.current_trade.open_price)
             closed_trade = Trade(
                 open=self.current_trade.open,
-                close=datetime.now(),
+                close=datetime.utcnow(),
                 volume=self.current_trade.volume,
                 profit=profit,
                 open_price=self.current_trade.open_price,
@@ -113,6 +121,8 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
             self.current_equity += profit
             self.current_status = DECISIONS.NO_DATA
             self.trade_history.append(closed_trade)
+            return DECISIONS.SELL_ALL
+        return DECISIONS.NO_DATA
 
     def buy_all(self, minimum=20.0, maximum=50000.0):
         # 1. Figure out how much we can try to buy
@@ -153,3 +163,9 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
         for order in orders:
             res = self._trade_api.delete(order['id'])
         return self._trade_api.status()
+
+    def _to_dataframe(self, data, index_field=None):
+        rv = pd.DataFrame.from_records(data)
+        if index_field is not None:
+            rv.set_index(index_field, inplace=True)
+            rv.sort_index(inplace=True)

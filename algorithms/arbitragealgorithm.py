@@ -72,8 +72,8 @@ class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
                 'decision': DECISIONS.NO_DATA
             })
         return Signal(**{
-            'buy': weighted_arbitrage_indicator.iloc[-1],
-            'sell': weighted_sell_indicator.iloc[-1],
+            'buy': round(weighted_arbitrage_indicator.iloc[-1], 2),
+            'sell': round(weighted_sell_indicator.iloc[-1], 2),
             'buy_datetime': weighted_arbitrage_indicator.index[-1],
             'sell_datetime': weighted_sell_indicator.index[-1],
             'decision': self._decide(

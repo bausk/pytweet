@@ -5,7 +5,7 @@ from datetime import timedelta, datetime
 
 from bokeh.layouts import row, widgetbox
 from bokeh.models import ColumnDataSource, Range1d, LinearAxis, DatetimeTicker, CustomJS
-from bokeh.models.widgets import TextInput, Button, PreText, Toggle
+from bokeh.models.widgets import TextInput, Button, PreText, Toggle, DataTable
 from bokeh.plotting import figure
 from bokeh.palettes import Spectral4
 
