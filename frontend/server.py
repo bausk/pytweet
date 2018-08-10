@@ -35,7 +35,7 @@ def format_columns(columns):
     rv = []
     for x in columns:
         if 'time' in x or 'date' in x:
-            rv.append(TableColumn(field=x, title=x, formatter=DateFormatter()))
+            rv.append(TableColumn(field=x, title=x, formatter=DateFormatter(format="%m-%d %H:%M:%S")))
         else:
             rv.append(TableColumn(field=x, title=x, formatter=StringFormatter()))
     return rv
@@ -256,9 +256,9 @@ def serve_frontend(doc):
     )
 
     table1_source = ColumnDataSource(data=pd.DataFrame(columns=formats.signal_format))
-    table1 = DataTable(source=table1_source, columns=format_columns(formats.signal_format))
+    table1 = DataTable(source=table1_source, columns=format_columns(formats.signal_format), width=900)
     table2_source = ColumnDataSource()
-    table2 = DataTable(source=table2_source, columns=format_columns(['indicator']))
+    table2 = DataTable(source=table2_source, columns=format_columns(['indicator']), width=900)
     # Data feed
     execute_datafeed_button = Button(label='Load', button_type='primary')
     lines_to_load = TextInput(title="No. of lines", value='50')
@@ -273,8 +273,8 @@ def serve_frontend(doc):
     def on_update_tables(button):
         count_to_load = int(lines_to_load.value)
         data = pd.DataFrame.from_records(trader.signal_history).tail(count_to_load)
-        table1_source.stream(data.to_dict(orient='list'), rollover=500)
-        table2_source.stream(trader.algorithm.latest_dataframe.to_dict(orient='list'), rollover=500)
+        table1_source.data = data.to_dict(orient='list')
+        table2_source.data = trader.algorithm.latest_dataframe.tail(count_to_load).to_dict()
 
     execute_datafeed_button.on_click(lambda: on_update_tables(execute_datafeed_button))
 

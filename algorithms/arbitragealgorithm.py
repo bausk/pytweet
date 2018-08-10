@@ -7,8 +7,8 @@ from persistence.mixins import WithConsole
 
 
 class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
-    rate: timedelta = timedelta(milliseconds=1000)
-    cutaway: timedelta = timedelta(minutes=20)
+    rate: timedelta = timedelta(milliseconds=10000)
+    cutaway: timedelta = timedelta(minutes=10)
     step: str = '1T'
     rolling_window: str = '2h'
     min_ask_bid_ratio = 0.0035
