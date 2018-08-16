@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from models.algorithm import BaseAlgorithm
+from models.simulator import BaseSimulator
 from models.exchange import BaseExchangeInterface
 from models.trade import Trade
 from models.signal import Signal
@@ -21,16 +22,18 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._trade_api = None
-        self._source_api = None
-        self._target_api = None
         self.trade_history = []
         self.signal_history = []
         self.algorithm: BaseAlgorithm = None
+        self.simulator: BaseSimulator = None
+        self._trade_api = None
+        self._source_api = None
+        self._target_api = None
         self._source_df = None
         self._orderbook = None
         self._target_trades = None
         self._cutoff = timedelta(hours=8)
+        self._emulate_signals = False
 
     def _get_cutoff(self):
         if self.algorithm is not None and getattr(self.algorithm, 'cutaway', None):
@@ -53,48 +56,113 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
     def add_algorithm(self, algorithm):
         self.algorithm = algorithm
 
-    @hdf_log('signal.csv', 'signal_history')
-    def signal_callback(self, *args, **kwargs):
-        current_time = datetime.now()
-        cutoff_delta = self._get_cutoff().seconds
-        cutoff_timestamp = int(current_time.timestamp()) - cutoff_delta
+    def add_simulator(self, simulator):
+        self.simulator = simulator
 
-        raw_source_data = self._source_api.fetch_latest_trades(limit=100)
+    def emulate_signals(self, status=False):
+        self._emulate_signals = status
+
+    def simulate(self, preprocessor=None, **kwargs):
+        self.signal_history = []
+        for name, filename in kwargs.items():
+            df = pd.DataFrame.from_csv(filename)
+            self.simulator.add_dataframe(df, name)
+        if preprocessor is None:
+            preprocessor = self.simulator.get_preprocessor()
+        for x in self.simulator:
+            signal_history = self.signal_callback(data_dict=x, preprocessor=preprocessor)
+            for k, df in x.items():
+                self.log("{}: {}\n".format(k, len(df)))
+        print(self.signal_history)
+
+    def _get_api_data(self):
+        raw_source_data = self._source_api.fetch_latest_trades(limit=10)
         source_df = self._prepare_data(raw_source_data)
-        self._source_df = pd.concat([self._source_df, source_df]).drop_duplicates(subset='timestamp')
-        self._source_df.drop(source_df.index[source_df['timestamp'] < cutoff_timestamp], inplace=True)
-
         raw_orderbook = orderbook_to_series(self._target_api.fetch_order_book())
         orderbook = self._prepare_data(
             raw_orderbook,
             {'time_field': 'timestamp', 'columns': orderbook_format, 'time_unit': 's'}
         )
-        self._orderbook = pd.concat([self._orderbook, orderbook]).drop_duplicates(subset='timestamp')
-        self._orderbook.drop(orderbook.index[orderbook['timestamp'] < cutoff_timestamp], inplace=True)
+        return {
+            'original_source': source_df,
+            'original_orderbook': orderbook
+        }
+
+
+    @hdf_log('signal.csv', 'signal_history')
+    def signal_callback(self, data_dict=None, preprocessor=None):
+        current_time = datetime.utcnow()
+        cutoff_delta = self._get_cutoff().seconds
+        cutoff_timestamp = int(current_time.timestamp()) - cutoff_delta
+        source = "simulator"
+        if data_dict is None:
+            # Work on default dataframes from _get_api_data
+            data_dict = self._get_api_data()
+            source = "live"
+
+        if self._emulate_signals:
+            data_dict['original_source'], data_dict['original_orderbook'] = \
+                self.algorithm.emulate(data_dict['original_source'], data_dict['original_orderbook'])
+
+        if source == "live":
+            data_dict['original_source'] = pd.concat(
+                [self._source_df, data_dict['original_source']]
+            ).drop_duplicates(keep='last', subset='timestamp')
+            data_dict['original_source'].drop(
+                data_dict['original_source'].index[data_dict['original_source']['timestamp'] < cutoff_timestamp],
+                inplace=True
+            )
+
+            data_dict['original_orderbook'] = pd.concat(
+                [self._orderbook, data_dict['original_orderbook']]
+            ).drop_duplicates(keep='last', subset='timestamp')
+            data_dict['original_orderbook'].drop(
+                data_dict['original_orderbook'].index[data_dict['original_orderbook']['timestamp'] < cutoff_timestamp],
+                inplace=True
+            )
+
+        true_source = None
+        true_orderbook = None
+        if 'normalized_source' in data_dict:
+            true_source = data_dict['normalized_source']
+        else:
+            true_source = data_dict['original_source']
+        if 'normalized_source' in data_dict:
+            true_orderbook = data_dict['normalized_orderbook']
+        else:
+            true_orderbook = data_dict['original_orderbook']
 
         # Apply algorithm from analyzer
-        signal_object: Signal = self.algorithm.signal(self._source_df, self._orderbook)
+        signal_object: Signal = self.algorithm.signal(true_source, true_orderbook, preprocessor)
         self.log("[{}] {}/{} from {}/{} measurements".format(
             current_time,
             signal_object.buy,
             signal_object.sell,
-            len(self._orderbook),
-            len(self._source_df)
+            len(true_orderbook),
+            len(true_source)
         ))
-        result = self._execute_signal(signal_object)
+        result = self._execute_signal(signal_object, orderbook=true_orderbook)
         historical_signal = signal_object._asdict()
         historical_signal['result'] = result
         historical_signal['logged_time'] = current_time
         self.signal_history.append(historical_signal)
+
+        if source == "live":
+            self._source_df = data_dict['original_source']
+            self._orderbook = data_dict['original_orderbook']
         return self.signal_history
 
-    def _execute_signal(self, signal: Signal):
+    def _execute_signal(self, signal: Signal, orderbook=None):
         """
         State machine to move around the trader current deal from inactive to active and back
         :param signal:
         :return:
         """
-        current_market = self._orderbook.dropna(subset=['timestamp']).iloc[-1]
+        if orderbook is None:
+            orderbook = self._orderbook
+        if orderbook is None or len(orderbook.dropna(subset=['timestamp'])) == 0:
+            return DECISIONS.NO_DATA
+        current_market = orderbook.dropna(subset=['timestamp']).iloc[-1]
         bid = current_market['bid'].item()
         ask = current_market['ask'].item()
         if signal.decision == DECISIONS.BUY_ALL and self.current_status == DECISIONS.NO_DATA:

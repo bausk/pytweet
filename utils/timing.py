@@ -15,6 +15,9 @@ def user_input_to_utc_time(time_string: str) -> Tuple[Union[datetime, Any], floa
         hour = float(time_string)
         date = now - timedelta(hours=hour)
     except:
-        date = parser.parse(time_string)
+        try:
+            date = parser.parse(time_string)
+        except:
+            return None, 0.0
     diff = (now - date).days * 24.0 + (now - date).seconds / 3600
     return date, diff

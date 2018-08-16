@@ -15,31 +15,46 @@ class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
     buy_threshold: int = 8
     sell_threshold: int = -5
     bars_shift: int = 10
+    _bars_min: int = 5
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.latest_dataframe = None
 
     def _data_ok(self, source_df, order_book):
-        if len(order_book) < 20:
+        if len(order_book) < self._bars_min:
             return False
         return True
 
-    def signal(self, source_df, order_book):
+    def emulate(self, source_df, orderbook_series):
+        """
+        Emulates signal of market movement by adding 10% to actual market rates
+        :param source_df:
+        :param orderbook_series:
+        :return:
+        """
+        source_df['price'] *= 1.1
+        return source_df, orderbook_series
+
+    def signal(self, source_df, order_book, preprocessor=None):
         print("[info] Performing analysis with Simple analyzer...")
-        current_datetime = datetime.now()
+        current_datetime = datetime.utcnow()
 
-        if not self._data_ok(source_df, order_book):
-            return Signal(**{
-                'buy': 0.0,
-                'sell': 0.0,
-                'buy_datetime': current_datetime,
-                'sell_datetime': current_datetime,
-                'decision': DECISIONS.NO_DATA
-            })
-
-        src_df = source_df.resample(self.step).mean().interpolate()
-        ord_df = order_book.resample(self.step).mean().interpolate()
+        src_df = None
+        ord_df = None
+        if preprocessor is None:
+            src_df = source_df.resample(self.step).mean().interpolate()
+            ord_df = order_book.resample(self.step).mean().interpolate()
+            if not self._data_ok(source_df, order_book):
+                return Signal(**{
+                    'buy': 0.0,
+                    'sell': 0.0,
+                    'buy_datetime': current_datetime,
+                    'sell_datetime': current_datetime,
+                    'decision': DECISIONS.NO_DATA
+                })
+        else:
+            src_df, ord_df = preprocessor(source_df, order_book)
 
         # Curvefitting of both charts
         shifted_target = ((ord_df['ask'] + ord_df['bid']) / 2).rolling(self.rolling_window).mean().shift(

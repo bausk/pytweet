@@ -19,6 +19,7 @@ from sources.historical import CryptowatchSource, KunaIoSource
 from parsers.rates import get_rate
 from persistence.pandas import PandasReader
 from models.trader import LiveTrader
+from models.simulator import BaseSimulator
 from implementations.kuna import KunaExchange
 from models.status_store import StatusStore
 from constants import formats
@@ -60,8 +61,8 @@ def init_plot(y_range=(USD_LOW, USD_HIGH)):
 
 
 def serve_frontend(doc):
+    current_time = datetime.utcnow()
     statuses = StatusStore("statuses_store")
-
     console = PreText(text="#>\n", width=500, height=100)
 
     src_store = PandasReader(name="bitfinex_btcusd", columns=formats.history_format, time_unit="s",
@@ -187,15 +188,41 @@ def serve_frontend(doc):
 
     fixate.on_click(lambda x: on_fix(fixate, x))
 
+    wgt_livesim = Button(label='Simulate', button_type='primary')
+    wgt_livesim_start = TextInput(
+        title="Live simulation start:", value=(current_time - timedelta(hours=6)).strftime('%Y-%m-%d %H:%M')
+    )
+    wgt_livesim_end = TextInput(
+        title="Livesimulation end:", value=current_time.strftime('%Y-%m-%d %H:%M')
+    )
+    wgt_livesim_freq = TextInput(
+        title="Simulation frequency (seconds):", value="10"
+    )
+
+    def on_simulate():
+        trader.simulate(
+            normalized_orderbook='normalized_orderbook.csv',
+            normalized_source='normalized_source.csv'
+        )
+
+    wgt_livesim.on_click(lambda: on_simulate())
+
     analyzer_inputs = widgetbox(
         wgt_refresh,
-        wgt_start_date, wgt_end_date,
+        wgt_start_date,
+        wgt_end_date,
         wgt_autoscale,
-        wgt_autoscale_starthours, wgt_autoscale_endhours,
+        wgt_autoscale_starthours,
+        wgt_autoscale_endhours,
         wgt_manualrate,
         wgt_analyze,
-        wgt_analyze_start, wgt_analyze_end,
+        wgt_analyze_start,
+        wgt_analyze_end,
         fixate,
+        wgt_livesim,
+        wgt_livesim_start,
+        wgt_livesim_end,
+        wgt_livesim_freq,
         console
     )
 
@@ -206,6 +233,11 @@ def serve_frontend(doc):
     trader.add_source_api(CryptowatchSource(currency=currencies.BTC))
     trader.add_target_api(KunaIoSource(currency=currencies.BTC))
     trader.add_algorithm(ArbitrageAlgorithm(console=console))
+    trader.add_simulator(BaseSimulator(
+        after=wgt_livesim_start,
+        before=wgt_livesim_end,
+        freq=wgt_livesim_freq
+    ))
 
     buy_all_button = Button(label='Buy All', button_type='success')
     sell_all_button = Button(label='Sell All', button_type='danger')
@@ -245,10 +277,19 @@ def serve_frontend(doc):
 
     cancel_all_button.on_click(lambda: on_cancel(cancel_all_button))
 
+    testbutton_debugsignal = Toggle(label='☑ Debug Signal')
+
+    def on_debugsignal(state):
+        trader.log('[debug] signal emulation: ' + str(state))
+        trader.emulate_signals(state)
+
+    testbutton_debugsignal.on_click(lambda x: on_debugsignal(x))
+
     trader_inputs = widgetbox(
         button_livetrade,
         text_publickey,
         text_secretkey,
+        testbutton_debugsignal,
         button_liveexecution,
         buy_all_button,
         sell_all_button,
@@ -257,8 +298,8 @@ def serve_frontend(doc):
 
     table1_source = ColumnDataSource(data=pd.DataFrame(columns=formats.signal_format))
     table1 = DataTable(source=table1_source, columns=format_columns(formats.signal_format), width=900)
-    table2_source = ColumnDataSource()
-    table2 = DataTable(source=table2_source, columns=format_columns(['indicator']), width=900)
+    table2_source = ColumnDataSource(data=pd.DataFrame(columns=['timestamp', 'indicator']))
+    table2 = DataTable(source=table2_source, columns=format_columns(['timestamp', 'indicator']), width=900)
     # Data feed
     execute_datafeed_button = Button(label='Load', button_type='primary')
     lines_to_load = TextInput(title="No. of lines", value='50')
@@ -274,7 +315,9 @@ def serve_frontend(doc):
         count_to_load = int(lines_to_load.value)
         data = pd.DataFrame.from_records(trader.signal_history).tail(count_to_load)
         table1_source.data = data.to_dict(orient='list')
-        table2_source.data = trader.algorithm.latest_dataframe.tail(count_to_load).to_dict()
+        if trader.algorithm.latest_dataframe is not None:
+            series = trader.algorithm.latest_dataframe.tail(count_to_load).to_dict()
+            table2_source.data = {'timestamp': list(series.keys()), 'indicator': list(series.values())}
 
     execute_datafeed_button.on_click(lambda: on_update_tables(execute_datafeed_button))
 

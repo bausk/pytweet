@@ -1,5 +1,6 @@
 from datetime import timedelta, datetime
 import pandas as pd
+import dateutil
 from dateutil import parser
 
 def fit_rates(rate1: pd.DataFrame, rate2: pd.DataFrame, period=2, minutes=10):
@@ -51,7 +52,7 @@ def orderbook_to_record(orderbook, coeff=1.0):
         res['bid_volume'] = volume
         res['bid_weight'] = weight
 
-        res['timestamp'] = int(datetime.now().timestamp())
+        res['timestamp'] = int(datetime.utcnow().replace(tzinfo=dateutil.tz.tzutc()).timestamp())
         return res
     except BaseException as e:
         print(e)
