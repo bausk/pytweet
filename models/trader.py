@@ -1,19 +1,20 @@
 from math import floor
 from datetime import datetime, timedelta
 import pandas as pd
-
+import dateutil
 from models.algorithm import BaseAlgorithm
 from models.simulator import BaseSimulator
 from models.exchange import BaseExchangeInterface
 from models.trade import Trade
 from models.signal import Signal
+from models.arbitrageplotter import ArbitragePlotter
 from persistence.simple_store import InMemoryStore
 from persistence.mixins import PrepareDataMixin, WithConsole
 from parsers.rates import orderbook_to_series
 from constants.formats import orderbook_format, signal_format
 from constants.constants import DECISIONS
 from logger.hdf_logger import hdf_log
-
+from constants.constants import INDICATOR_NAMES
 
 class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
     current_status = DECISIONS.NO_DATA
@@ -32,8 +33,9 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
         self._source_df = None
         self._orderbook = None
         self._target_trades = None
-        self._cutoff = timedelta(hours=8)
+        self._cutoff = timedelta(hours=24)
         self._emulate_signals = False
+        self._plotter: ArbitragePlotter = None
 
     def _get_cutoff(self):
         if self.algorithm is not None and getattr(self.algorithm, 'cutaway', None):
@@ -59,21 +61,35 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
     def add_simulator(self, simulator):
         self.simulator = simulator
 
+    def add_graphics(self, plotter: ArbitragePlotter):
+        self._plotter = plotter
+
     def emulate_signals(self, status=False):
         self._emulate_signals = status
 
     def simulate(self, preprocessor=None, **kwargs):
         self.signal_history = []
+        dfs = {}
         for name, filename in kwargs.items():
             df = pd.DataFrame.from_csv(filename)
             self.simulator.add_dataframe(df, name)
+            dfs[name] = df
         if preprocessor is None:
             preprocessor = self.simulator.get_preprocessor()
         for x in self.simulator:
-            signal_history = self.signal_callback(data_dict=x, preprocessor=preprocessor)
+            current_time = self.simulator.get_time()
+            self.signal_callback(data_dict=x, preprocessor=preprocessor, current_time=current_time)
+            # x['normalized_source'].iloc[-1]['timestamp'] > 1533971375
             for k, df in x.items():
                 self.log("{}: {}\n".format(k, len(df)))
         print(self.signal_history)
+        if self._plotter is not None:
+            self._plotter.refresh(**dfs)
+            signal_chart = pd.DataFrame.from_records(self.signal_history, columns=signal_format)
+            signal_chart['Time'] = signal_chart['buy_datetime']
+            signal_chart['values'] = signal_chart['buy']
+            signal_chart.set_index('Time', inplace=True)
+            self._plotter.refresh_indicator(INDICATOR_NAMES.WEIGTHED, signal_chart)
 
     def _get_api_data(self):
         raw_source_data = self._source_api.fetch_latest_trades(limit=10)
@@ -90,8 +106,9 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
 
 
     @hdf_log('signal.csv', 'signal_history')
-    def signal_callback(self, data_dict=None, preprocessor=None):
-        current_time = datetime.utcnow()
+    def signal_callback(self, data_dict=None, preprocessor=None, current_time=None):
+        if current_time is None:
+            current_time = datetime.utcnow().replace(tzinfo=dateutil.tz.tzutc())
         cutoff_delta = self._get_cutoff().seconds
         cutoff_timestamp = int(current_time.timestamp()) - cutoff_delta
         source = "simulator"
@@ -133,7 +150,7 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
             true_orderbook = data_dict['original_orderbook']
 
         # Apply algorithm from analyzer
-        signal_object: Signal = self.algorithm.signal(true_source, true_orderbook, preprocessor)
+        signal_object: Signal = self.algorithm.signal(true_source, true_orderbook, preprocessor, current_time)
         self.log("[{}] {}/{} from {}/{} measurements".format(
             current_time,
             signal_object.buy,
@@ -141,7 +158,7 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
             len(true_orderbook),
             len(true_source)
         ))
-        result = self._execute_signal(signal_object, orderbook=true_orderbook)
+        result = self._execute_signal(signal_object, orderbook=true_orderbook, current_time=current_time)
         historical_signal = signal_object._asdict()
         historical_signal['result'] = result
         historical_signal['logged_time'] = current_time
@@ -152,12 +169,14 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
             self._orderbook = data_dict['original_orderbook']
         return self.signal_history
 
-    def _execute_signal(self, signal: Signal, orderbook=None):
+    def _execute_signal(self, signal: Signal, orderbook=None, current_time=None):
         """
         State machine to move around the trader current deal from inactive to active and back
         :param signal:
         :return:
         """
+        if current_time is None:
+            current_time = datetime.utcnow().replace(tzinfo=dateutil.tz.tzutc())
         if orderbook is None:
             orderbook = self._orderbook
         if orderbook is None or len(orderbook.dropna(subset=['timestamp'])) == 0:
@@ -168,7 +187,7 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
         if signal.decision == DECISIONS.BUY_ALL and self.current_status == DECISIONS.NO_DATA:
             # perform trade
             self.current_trade = Trade(
-                open=datetime.utcnow(),
+                open=current_time,
                 close=None,
                 volume=self.current_equity / ask,
                 profit=None,
@@ -181,7 +200,7 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
             profit = self.current_trade.volume * (bid - 1.005 * self.current_trade.open_price)
             closed_trade = Trade(
                 open=self.current_trade.open,
-                close=datetime.utcnow(),
+                close=current_time,
                 volume=self.current_trade.volume,
                 profit=profit,
                 open_price=self.current_trade.open_price,

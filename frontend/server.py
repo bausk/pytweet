@@ -20,6 +20,7 @@ from parsers.rates import get_rate
 from persistence.pandas import PandasReader
 from models.trader import LiveTrader
 from models.simulator import BaseSimulator
+from models.arbitrageplotter import ArbitragePlotter
 from implementations.kuna import KunaExchange
 from models.status_store import StatusStore
 from constants import formats
@@ -86,18 +87,7 @@ def serve_frontend(doc):
         data=dict(Time=tgt_df.index, price=tgt_df.price, volume=tgt_df['volume'].multiply(100)))
     source_ord = ColumnDataSource(data=dict(Time=ord_df.index, ask=ord_df.get('ask', []), bid=ord_df.get('bid', [])))
 
-    plot = init_plot()
-
-    plot.line('Time', 'price', source=source_src, line_width=3, color=Spectral4[0], alpha=0.8, legend="SRC",
-              line_join='round', name=GLYPHNAMES.SOURCE)
-    plot.line('Time', 'price', source=source_tgt, line_width=3, color=Spectral4[1], alpha=0.8, legend="TGT",
-              y_range_name="BTCUAH", line_join='round', name=GLYPHNAMES.TARGET)
-    plot.circle('Time', 'price', source=source_tgt, size='volume', legend="TGT", alpha=0.6, line_width=1,
-                y_range_name="BTCUAH", name=GLYPHNAMES.VOLUMES)
-    plot.line('Time', 'bid', source=source_ord, line_width=1, color=Spectral4[2], alpha=1, legend="Bid",
-              y_range_name="BTCUAH", line_join='round', name=GLYPHNAMES.TGT_BID)
-    plot.line('Time', 'ask', source=source_ord, line_width=1, color=Spectral4[3], alpha=1, legend="Ask",
-              y_range_name="BTCUAH", line_join='round', name=GLYPHNAMES.TGT_ASK)
+    plotter = ArbitragePlotter()
 
     wgt_start_date = TextInput(title="Start at hours before now:", value='5')
     wgt_end_date = TextInput(title="End at hours before now:", value='0')
@@ -110,7 +100,7 @@ def serve_frontend(doc):
 
     wgt_refresh = Button(label='Refresh', button_type='success')
 
-    def on_refresh(button):
+    def on_refresh():
         nonlocal src_df
         nonlocal tgt_df
         nonlocal ord_df
@@ -126,14 +116,14 @@ def serve_frontend(doc):
         except BaseException as e:
             print(e)
 
-    wgt_refresh.on_click(lambda: on_refresh(wgt_refresh))
+    wgt_refresh.on_click(lambda: on_refresh())
 
     wgt_manualrate = TextInput(title="Manual Rate:", value=str(DEFAULT_COEFF))
 
     def on_coeff_change(attrname, old, new):
         print(attrname, old, new)
-        plot.extra_y_ranges['BTCUAH'].start = plot.y_range.start * float(new)
-        plot.extra_y_ranges['BTCUAH'].end = plot.y_range.end * float(new)
+        plotter._plot.extra_y_ranges['BTCUAH'].start = plotter._plot.y_range.start * float(new)
+        plotter._plot.extra_y_ranges['BTCUAH'].end = plotter._plot.y_range.end * float(new)
 
     wgt_manualrate.on_change('value', on_coeff_change)
 
@@ -154,52 +144,53 @@ def serve_frontend(doc):
     wgt_autoscale.on_click(lambda: on_autoscale(wgt_autoscale))
 
     wgt_analyze = Button(label='Analyze', button_type='primary')
-    analyzer = BaseArbitrageAnalyzer(
-        {'src_store': src_store, 'tgt_store': tgt_store, 'ord_store': ord_store},
-        plot,
-        start=wgt_analyze_start,
-        end=wgt_analyze_end,
-        console=console
-    )
+    # analyzer = BaseArbitrageAnalyzer(
+    #     {'src_store': src_store, 'tgt_store': tgt_store, 'ord_store': ord_store},
+    #     plot,
+    #     start=wgt_analyze_start,
+    #     end=wgt_analyze_end,
+    #     console=console
+    # )
 
-    def on_analyze(button):
-        _, src_df, ord_df = analyzer.analyze()
-        source_ord.data = dict(Time=ord_df.index, ask=ord_df.ask, bid=ord_df.bid)
-        source_src.data = dict(Time=src_df.index, price=src_df.price)
+    # def on_analyze(button):
+    #     _, src_df, ord_df = analyzer.analyze()
+    #     source_ord.data = dict(Time=ord_df.index, ask=ord_df.ask, bid=ord_df.bid)
+    #     source_src.data = dict(Time=src_df.index, price=src_df.price)
+    #
+    # wgt_analyze.on_click(lambda: on_analyze(wgt_analyze))
 
-    wgt_analyze.on_click(lambda: on_analyze(wgt_analyze))
-
-    fixate = Toggle(label='Fix Y Axis')
-
-    def on_fix(button, state):
-        console.text += "Changing fix to: " + str(state) + "\n"
-        if state:
-            jscode = """
-                    range.start = parseInt({start});
-                    range.end = parseInt({end});
-                """
-            plot.extra_y_ranges['UNITLESS'].callback = CustomJS(
-                args=dict(range=plot.extra_y_ranges['UNITLESS']),
-                code=jscode.format(start=plot.extra_y_ranges['UNITLESS'].start,
-                                   end=plot.extra_y_ranges['UNITLESS'].end)
-            )
-        else:
-            plot.extra_y_ranges['UNITLESS'].callback = None
-
-    fixate.on_click(lambda x: on_fix(fixate, x))
+    # fixate = Toggle(label='Fix Y Axis')
+    #
+    # def on_fix(button, state):
+    #     console.text += "Changing fix to: " + str(state) + "\n"
+    #     if state:
+    #         jscode = """
+    #                 range.start = parseInt({start});
+    #                 range.end = parseInt({end});
+    #             """
+    #         plot.extra_y_ranges['UNITLESS'].callback = CustomJS(
+    #             args=dict(range=plot.extra_y_ranges['UNITLESS']),
+    #             code=jscode.format(start=plot.extra_y_ranges['UNITLESS'].start,
+    #                                end=plot.extra_y_ranges['UNITLESS'].end)
+    #         )
+    #     else:
+    #         plot.extra_y_ranges['UNITLESS'].callback = None
+    #
+    # fixate.on_click(lambda x: on_fix(fixate, x))
 
     wgt_livesim = Button(label='Simulate', button_type='primary')
     wgt_livesim_start = TextInput(
-        title="Live simulation start:", value=(current_time - timedelta(hours=6)).strftime('%Y-%m-%d %H:%M')
+        title="Live simulation start:", value="2018-08-11 06:00"
     )
     wgt_livesim_end = TextInput(
-        title="Livesimulation end:", value=current_time.strftime('%Y-%m-%d %H:%M')
+        title="Livesimulation end:", value="2018-08-11 10:00"
     )
     wgt_livesim_freq = TextInput(
-        title="Simulation frequency (seconds):", value="10"
+        title="Simulation frequency (seconds):", value="60"
     )
 
     def on_simulate():
+        trader.add_graphics(plotter)
         trader.simulate(
             normalized_orderbook='normalized_orderbook.csv',
             normalized_source='normalized_source.csv'
@@ -218,7 +209,7 @@ def serve_frontend(doc):
         wgt_analyze,
         wgt_analyze_start,
         wgt_analyze_end,
-        fixate,
+        # fixate,
         wgt_livesim,
         wgt_livesim_start,
         wgt_livesim_end,
@@ -305,7 +296,7 @@ def serve_frontend(doc):
     lines_to_load = TextInput(title="No. of lines", value='50')
 
     wide_formats = column(
-        plot,
+        plotter.get_plot(),
         row(execute_datafeed_button, lines_to_load),
         table1,
         table2

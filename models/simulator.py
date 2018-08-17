@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
+import dateutil
 from utils.timing import user_input_to_utc_time
 from types import SimpleNamespace
 import itertools
+
 
 class BaseSimulator:
     normalized_names = ['normalized_orderbook', 'normalized_source']
@@ -28,6 +30,9 @@ class BaseSimulator:
             return lambda *x: x
         return None
 
+    def get_time(self):
+        return self._current_caret_start
+
     def _new_name(self):
         for x in itertools.count(0):
             if x not in self._named_dataframes:
@@ -43,7 +48,7 @@ class BaseSimulator:
             rv.freq = timedelta(seconds=float(self._freq.value if getattr(self._freq, 'value') else self._freq))
         except:
             rv.freq = timedelta(seconds=10)
-        earliest_start = min(df.index[0] for i, df in self._named_dataframes.items())
+        earliest_start = min(df.index[0] for i, df in self._named_dataframes.items()).replace(tzinfo=dateutil.tz.tzutc())
         self._current_caret_start = max(earliest_start, rv.after) if rv.after is not None else earliest_start
         self._start = self._current_caret_start
         return rv

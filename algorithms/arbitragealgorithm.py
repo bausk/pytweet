@@ -1,5 +1,5 @@
 from datetime import timedelta, datetime
-
+import dateutil
 from constants.constants import DECISIONS
 from models.algorithm import BaseAlgorithm
 from models.signal import Signal
@@ -36,9 +36,10 @@ class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
         source_df['price'] *= 1.1
         return source_df, orderbook_series
 
-    def signal(self, source_df, order_book, preprocessor=None):
+    def signal(self, source_df, order_book, preprocessor=None, current_datetime=None):
         print("[info] Performing analysis with Simple analyzer...")
-        current_datetime = datetime.utcnow()
+        if current_datetime is None:
+            current_datetime = datetime.utcnow().replace(tzinfo=dateutil.tz.tzutc())
 
         src_df = None
         ord_df = None
