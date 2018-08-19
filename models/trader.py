@@ -16,6 +16,7 @@ from constants.constants import DECISIONS
 from logger.hdf_logger import hdf_log
 from constants.constants import INDICATOR_NAMES
 
+
 class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
     current_status = DECISIONS.NO_DATA
     current_trade = None
@@ -87,9 +88,8 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
             self._plotter.refresh(**dfs)
             signal_chart = pd.DataFrame.from_records(self.signal_history, columns=signal_format)
             signal_chart['Time'] = signal_chart['buy_datetime']
-            signal_chart['values'] = signal_chart['buy']
             signal_chart.set_index('Time', inplace=True)
-            self._plotter.refresh_indicator(INDICATOR_NAMES.WEIGTHED, signal_chart)
+            self._plotter.refresh_indicator(INDICATOR_NAMES.WEIGTHED, signal_chart, col='buy')
 
     def _get_api_data(self):
         raw_source_data = self._source_api.fetch_latest_trades(limit=10)
@@ -104,8 +104,13 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
             'original_orderbook': orderbook
         }
 
+    def _perform_cutoff(self, df, timestamp):
+        df.drop(
+            df.index[df['timestamp'] < timestamp],
+            inplace=True
+        )
+        return df
 
-    @hdf_log('signal.csv', 'signal_history')
     def signal_callback(self, data_dict=None, preprocessor=None, current_time=None):
         if current_time is None:
             current_time = datetime.utcnow().replace(tzinfo=dateutil.tz.tzutc())
@@ -141,13 +146,13 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
         true_source = None
         true_orderbook = None
         if 'normalized_source' in data_dict:
-            true_source = data_dict['normalized_source']
+            true_source = self._perform_cutoff(data_dict['normalized_source'], cutoff_timestamp)
         else:
-            true_source = data_dict['original_source']
+            true_source = self._perform_cutoff(data_dict['original_source'], cutoff_timestamp)
         if 'normalized_source' in data_dict:
-            true_orderbook = data_dict['normalized_orderbook']
+            true_orderbook = self._perform_cutoff(data_dict['normalized_orderbook'], cutoff_timestamp)
         else:
-            true_orderbook = data_dict['original_orderbook']
+            true_orderbook = self._perform_cutoff(data_dict['original_orderbook'], cutoff_timestamp)
 
         # Apply algorithm from analyzer
         signal_object: Signal = self.algorithm.signal(true_source, true_orderbook, preprocessor, current_time)

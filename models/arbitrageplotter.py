@@ -50,7 +50,7 @@ class ArbitragePlotter:
         return self._plot
 
     def refresh_indicator(self, name, indicator, col=None):
-        self._line(name, indicator, col=col, color=Spectral10[10])
+        self._line(name, indicator, col=col, color=Spectral10[9])
 
     def _line(self, name, series=None, col=None, color=Spectral10[8]):
         # For now, do not delete existing data on the line
@@ -58,13 +58,10 @@ class ArbitragePlotter:
             col = 'indicator'
         line = self._plot.select_one(name)
         if line is None:
-            line_cds = ColumnDataSource(data=dict(Time=series.index, indicator=series.values))
-            line = self._plot.line('Time', col, source=line_cds, line_width=2, color=color, alpha=0.9,
+            line_cds = ColumnDataSource(data=dict(Time=series.index, indicator=series[col]))
+            line = self._plot.line('Time', 'indicator', source=line_cds, line_width=2, color=color, alpha=0.9,
                                    legend="Indicator " + name,
                                    y_range_name="UNITLESS", line_join='round', name=name)
         else:
-            line_df = line.data_source.to_df()
-            line_df['indicator'].update(series)
-            new_df = line_df
-            line.data_source.data = (dict(Time=new_df.index, indicator=new_df.indicator))
+            line.data_source.data = (dict(Time=series.index, indicator=series[col]))
         return line
