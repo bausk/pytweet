@@ -88,6 +88,7 @@ def serve_frontend(doc):
     source_ord = ColumnDataSource(data=dict(Time=ord_df.index, ask=ord_df.get('ask', []), bid=ord_df.get('bid', [])))
 
     plotter = ArbitragePlotter()
+    trader.add_graphics(plotter)
 
     wgt_start_date = TextInput(title="Start at hours before now:", value='5')
     wgt_end_date = TextInput(title="End at hours before now:", value='0')
@@ -190,7 +191,6 @@ def serve_frontend(doc):
     )
 
     def on_simulate():
-        trader.add_graphics(plotter)
         trader.simulate(
             normalized_orderbook='normalized_orderbook.csv',
             normalized_source='normalized_source.csv'

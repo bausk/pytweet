@@ -62,7 +62,7 @@ class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
             self.bars_shift)
         shifted_source = src_df['price'].rolling(self.rolling_window).mean().shift(self.bars_shift)
         coeffs = shifted_target / shifted_source
-        self.log("Curvefitting for {} datapoints...".format(len(coeffs)))
+        print("Curvefitting for {} datapoints...".format(len(coeffs)))
         normalized_ask_bid_distance = ord_df['ask'] - ord_df['bid']
         minimum_ask_bid_distance = ord_df['bid'] * self.min_ask_bid_ratio
 
@@ -83,7 +83,7 @@ class ArbitrageAlgorithm(WithConsole, BaseAlgorithm):
         sell_indicator.loc[sell_indicator > -0.8] = 0
         weighted_sell_indicator = sell_indicator.rolling('180s').sum()
         self.latest_dataframe = weighted_arbitrage_indicator
-        self.log("[info] Calculated indicators")
+        print("[info] Calculated indicators")
         if len(weighted_arbitrage_indicator) == 0 or len(weighted_sell_indicator) == 0:
             return Signal(**{
                 'buy': 0.0,

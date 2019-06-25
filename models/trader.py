@@ -14,6 +14,7 @@ from parsers.rates import orderbook_to_series
 from constants.formats import orderbook_format, signal_format
 from constants.constants import DECISIONS
 from logger.hdf_logger import hdf_log
+from logger.visual_logger import VisualLogger
 from constants.constants import INDICATOR_NAMES
 
 
@@ -36,6 +37,7 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
         self._target_trades = None
         self._cutoff = timedelta(hours=24)
         self._emulate_signals = False
+        self._logger = VisualLogger()
         self._plotter: ArbitragePlotter = None
 
     def _get_cutoff(self):
@@ -90,6 +92,9 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
             signal_chart['Time'] = signal_chart['buy_datetime']
             signal_chart.set_index('Time', inplace=True)
             self._plotter.refresh_indicator(INDICATOR_NAMES.WEIGTHED, signal_chart, col='buy')
+
+    def report(self, signal):
+        pass
 
     def _get_api_data(self):
         raw_source_data = self._source_api.fetch_latest_trades(limit=10)
@@ -156,18 +161,22 @@ class LiveTrader(WithConsole, PrepareDataMixin, InMemoryStore):
 
         # Apply algorithm from analyzer
         signal_object: Signal = self.algorithm.signal(true_source, true_orderbook, preprocessor, current_time)
-        self.log("[{}] {}/{} from {}/{} measurements".format(
-            current_time,
-            signal_object.buy,
-            signal_object.sell,
-            len(true_orderbook),
-            len(true_source)
-        ))
         result = self._execute_signal(signal_object, orderbook=true_orderbook, current_time=current_time)
+
         historical_signal = signal_object._asdict()
         historical_signal['result'] = result
         historical_signal['logged_time'] = current_time
         self.signal_history.append(historical_signal)
+
+        # add logging of important stuff
+        if result != DECISIONS.NO_DATA or self._logger.timeout():
+            self.log(str(signal_object))
+            if self._plotter is not None:
+                self._plotter.refresh(original_source=true_source, original_orderbook=true_orderbook)
+                signal_chart = pd.DataFrame.from_records(self.signal_history, columns=signal_format)
+                signal_chart['Time'] = signal_chart['buy_datetime']
+                signal_chart.set_index('Time', inplace=True)
+                self._plotter.refresh_indicator(INDICATOR_NAMES.WEIGTHED, signal_chart, col='buy')
 
         if source == "live":
             self._source_df = data_dict['original_source']
