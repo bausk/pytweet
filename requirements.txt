@@ -2,6 +2,6 @@ python-dateutil==2.6.1
 requests==2.18.4
 bokeh==0.12.13
 nltk==3.2.5
-numpy==1.14.0
+numpy==1.22.0
 pandas==0.22.0
 psycopg2
